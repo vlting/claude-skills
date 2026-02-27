@@ -1,0 +1,7 @@
+{
+  "parallel_epics": {
+    "enabled": false,
+    "description": "Allow parallel execution of independent epics (v2 feature — requires multi-orchestrator relay support)",
+    "added": "2026-02-27"
+  }
+}
