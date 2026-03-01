@@ -4,7 +4,7 @@ description: "Queue a task or drain the task queue."
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 10.0.0
+  version: 10.1.0
 ---
 
 # Q Command
@@ -97,7 +97,7 @@ At QTM startup (before the first scan), ensure relay is running:
 
 ### Stopping relay at QTM exit
 
-When QTM exits (queue drained, RFX timeout, or `epic-done` received), call `/relay stop`. The smart stop checks connected clients:
+When QTM exits (queue drained, `epic-done` received, or user termination), call `/relay stop`. The smart stop checks connected clients:
 - **Other agents still connected:** Stop is refused (no-op). Relay stays alive for them.
 - **No agents connected:** Relay is stopped. This agent was the last one out.
 
@@ -240,7 +240,7 @@ QTM scans for the `next available queued task` (defined as "the lowest-numbered 
 
 5. Then start on the `next available queued task`.
 6. **When no more tasks can be claimed** (queue empty, or all remaining are `-active.md`, `-wip.md`, or dependency-blocked), run the **Orphan Recovery Protocol** (see below). If orphan recovery reclaims any tasks, continue the drain loop (go back to step 1).
-7. **If no orphans were found**, enter **Ready for Execution (RFX) mode** (see below). RFX polls the queue for new actionable files for up to 10 minutes. If a file appears, exit RFX and go back to step 1 to claim and execute it. If the timeout expires with no work found, exit QTM.
+7. **If no orphans were found**, enter **Ready for Execution (RFX) mode** (see below). RFX keeps the agent alive indefinitely, waiting for new actionable files. If a file appears, exit RFX and go back to step 1 to claim and execute it.
 
    On exit, print a final status:
    ```
@@ -253,7 +253,7 @@ QTM scans for the `next available queued task` (defined as "the lowest-numbered 
    --- Queue empty ---
    ```
 
-8. **Stop relay on exit.** After printing the final status (or at any other QTM exit point — RFX timeout, `epic-done` received), call `/relay stop`. The smart stop is safe to call unconditionally: it refuses if other agents are still connected, and succeeds only if this agent is the last one out.
+8. **Stop relay on exit.** After printing the final status (or at any other QTM exit point — `epic-done` received, user termination), call `/relay stop`. The smart stop is safe to call unconditionally: it refuses if other agents are still connected, and succeeds only if this agent is the last one out.
 
 > **For parallel execution**, run `/q` in multiple terminal windows — the atomic rename mechanism ensures each task is claimed by exactly one agent.
 
@@ -353,7 +353,7 @@ The discovering agent takes over the orphaned task **directly** — it does NOT 
 
 ### Ready for Execution (RFX) Mode
 
-RFX keeps the agent alive while waiting for new work. Without RFX, the drain agent would exit immediately on an empty queue, requiring the user to manually re-run `/q`.
+RFX keeps the agent alive **indefinitely** while waiting for new work. Without RFX, the drain agent would exit immediately on an empty queue, requiring the user to manually re-run `/q`. The agent stays in RFX until work arrives or it receives an `epic-done` signal — there is no idle timeout.
 
 **When RFX activates:** Step 7 of the drain loop — after the normal scan finds nothing claimable AND orphan recovery finds nothing to reclaim.
 
@@ -365,36 +365,34 @@ When `RELAY_RUNNING=true`, RFX uses the relay socket for instant event-driven wa
 
 1. Print a status message:
    ```
-   --- Entering RFX mode (relay-connected, waiting for events) ---
+   --- Entering RFX mode (relay-connected, waiting indefinitely for events) ---
    ```
 2. **Wait for a relay event** using a single blocking bash command:
    ```bash
    RESULT=$(node -e "
    const s = require('net').connect(process.argv[1]);
    const events = new Set(['work-queued','epic-done','worker-disconnected']);
-   const timeout = setTimeout(() => { console.log('RFX_TIMEOUT'); s.destroy(); }, 600000);
    s.write(JSON.stringify({type:'identify',role:'worker',pid:+(process.env.PPID||0)})+'\n');
    s.on('data', d => {
      for (const line of d.toString().split('\n').filter(Boolean)) {
        try {
          const msg = JSON.parse(line);
          if (msg.type === 'event' && events.has(msg.event)) {
-           clearTimeout(timeout);
            console.log(JSON.stringify(msg));
            s.destroy();
          }
        } catch {}
      }
    });
-   s.on('error', () => { console.log('RFX_TIMEOUT'); s.destroy(); });
+   s.on('error', () => { console.log('RFX_RECONNECT'); s.destroy(); });
    " "$RELAY_SOCK")
    ```
-   This runs as a **single tool call** — blocks until an event arrives or 10 minutes elapse.
+   This runs as a **single tool call** — blocks indefinitely until a relevant event arrives.
 3. **Interpret the result:**
    - **`work-queued`**: Return to the drain loop (step 1) to claim and execute the new task.
    - **`worker-disconnected`**: The event includes the dead agent's PID and tasks. Run the orphan recovery protocol (step 6) to check if any of those tasks can be reclaimed. Then return to step 1.
    - **`epic-done`**: Exit QTM gracefully with the standard final status message.
-   - **`RFX_TIMEOUT`** or socket error: Run one final orphan scan before exiting. If orphans are found, reclaim them. Otherwise exit QTM.
+   - **`RFX_RECONNECT`** (socket error): Run an orphan scan. If orphans are found, reclaim them and return to step 1. Otherwise, **re-enter RFX** (go back to step 2) — do NOT exit QTM.
 
 #### RFX without relay (fallback)
 
@@ -402,13 +400,12 @@ When relay is not running, RFX falls back to filesystem polling:
 
 1. Print a status message:
    ```
-   --- Entering RFX mode (polling for up to 10 minutes) ---
+   --- Entering RFX mode (polling indefinitely for new tasks) ---
    ```
 2. **Poll the queue** using a single bash command that checks every 15 seconds:
    ```bash
    QUEUE_DIR=".ai-queue"
-   END=$(($(date +%s) + 600))
-   while [ $(date +%s) -lt $END ]; do
+   while true; do
      # Check for pending files (not -active, not -wip)
      FOUND=$(ls "$QUEUE_DIR"/*.md 2>/dev/null | xargs -I{} basename {} | grep -v -E '(-active|-wip)\.md$' || true)
      if [ -n "$FOUND" ]; then
@@ -417,16 +414,13 @@ When relay is not running, RFX falls back to filesystem polling:
      fi
      sleep 15
    done
-   echo "RFX_TIMEOUT"
-   exit 1
    ```
-   This runs as a **single tool call** — no context bloat from repeated checks.
+   This runs as a **single tool call** — no context bloat from repeated checks. The loop runs indefinitely until actionable files appear.
 3. **If the poll finds actionable files** (`exit 0`): Exit RFX and return to the drain loop (step 1) to claim and execute the task normally.
-4. **If the poll times out** (`exit 1`): Run one final orphan scan before exiting. If orphans are found, reclaim them. Otherwise exit QTM.
 
 #### Common RFX behavior
 
-**Timeout resets after completing work.** The 10-minute window measures *idle* time — time spent waiting without finding actionable work. Each time the agent completes a task and re-enters RFX (via step 7), the 10-minute clock resets. This keeps the agent alive as long as work keeps arriving, even if there are gaps between tasks.
+**RFX runs indefinitely.** The agent stays in RFX until work arrives, an `epic-done` signal is received, or the user manually terminates the agent (e.g., Ctrl+C). There is no idle timeout — the agent is always ready to pick up new work the moment it's queued.
 
 **RFX does NOT activate when:**
 - The agent was invoked with `q {description}` (enqueue mode) — that flow creates files and exits, it never drains.
