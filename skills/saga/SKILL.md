@@ -226,16 +226,15 @@ If no notification channel is configured, fall back to `osascript` (desktop). If
    - {Any unresolved questions that may affect implementation}
    ```
 
-4. **Commit the PRD:**
+4. **Commit the PRD to `main`:**
    ```bash
    git checkout main
-   git checkout -b saga/<slug>
    git add .ai-sagas/docs/<slug>/prd.md
    git commit -m "docs(<slug>): add PRD for <slug> saga"
-   git push -u origin saga/<slug>
+   git push origin main
    ```
 
-   **Note:** The saga branch (`saga/<slug>`) is used only for saga-level documents (PRD, saga roadmap). Each epic creates its own `epic/<slug>` branch from `main` for actual code changes. The saga branch does not accumulate code — it's a documentation branch.
+   **IMPORTANT — saga files live on `main`:** All `.ai-sagas/` files (PRD, roadmap) MUST be committed to `main`, NOT to a separate saga branch. Epic branches are created from `main`, so saga files must be on `main` to remain visible in every working tree. If saga files are committed only to a `saga/<slug>` branch, they vanish the moment you checkout `main` or any epic branch — effectively "deleting" them from the developer's perspective.
 
 5. **Update the PRD status** to `active`.
 
@@ -278,7 +277,6 @@ If no notification channel is configured, fall back to `osascript` (desktop). If
 
    # Saga: {title}
 
-   - **Branch:** saga/{slug}
    - **PRD:** `.ai-sagas/docs/<slug>/prd.md`
    - **GitHub Issue:** #{number}   ← filled after step 6
    - **Created:** YYYY-MM-DD
@@ -339,7 +337,6 @@ If no notification channel is configured, fall back to `osascript` (desktop). If
 
    **PRD:** `.ai-sagas/docs/{slug}/prd.md`
    **Saga Roadmap:** `.ai-sagas/roadmaps/{slug}.md`
-   **Branch:** `saga/{slug}`
 
    ### Epics
    - [ ] Epic 1: {title}
@@ -363,11 +360,12 @@ If no notification channel is configured, fall back to `osascript` (desktop). If
 
    Update the saga roadmap with the issue number.
 
-6. **Commit the saga roadmap:**
+6. **Commit the saga roadmap to `main`:**
    ```bash
+   git checkout main
    git add .ai-sagas/roadmaps/<slug>.md
    git commit -m "docs(<slug>): add saga roadmap with epic breakdown"
-   git push
+   git push origin main
    ```
 
 7. **Present the epic breakdown to the user.** Show:
@@ -458,15 +456,15 @@ This phase runs when `/saga` (bare) is invoked.
    {Derived from PRD — specific, testable criteria for this epic}
    ```
 
-   Commit the tech spec:
+   Commit the tech spec and saga roadmap update to `main`:
    ```bash
    git checkout main
-   git add .ai-epics/docs/<epic-slug>/tech-spec.md
-   git commit -m "docs(<epic-slug>): add tech spec for <epic-slug> epic"
-   git push
+   git add .ai-epics/docs/<epic-slug>/tech-spec.md .ai-sagas/roadmaps/<saga-slug>.md
+   git commit -m "docs(<epic-slug>): add tech spec, update saga roadmap"
+   git push origin main
    ```
 
-7. **Update the saga roadmap:** Set this epic's status to `in-progress`. Record the epic roadmap path once created.
+7. **Update the saga roadmap:** Set this epic's status to `in-progress`. Record the epic roadmap path once created. (The roadmap file was already staged and committed in step 6.)
 
 8. **Invoke epic PLAN.** Execute the epic skill's Phase 1 (PLAN) for this epic. The epic goal description should reference both the PRD and the tech spec:
 
@@ -555,7 +553,16 @@ This phase runs when `/saga` (bare) is invoked.
      4. Update the PRD if needed. Adjust remaining epics if needed.
      5. Resume.
 
-5. **Update the saga roadmap:** Set the completed epic's status to `complete`.
+5. **Update the saga roadmap on `main`:** Set the completed epic's status to `complete`. Commit and push the updated roadmap to `main`:
+   ```bash
+   git stash  # if on a non-main branch with changes
+   git checkout main
+   git add .ai-sagas/roadmaps/<slug>.md
+   git commit -m "docs(<slug>): mark epic N complete in saga roadmap"
+   git push origin main
+   git checkout -
+   git stash pop  # if stashed
+   ```
 
 6. **Check off the epic in the saga GitHub issue body:**
    ```bash
@@ -606,7 +613,7 @@ Between epics, keep workers alive. Do NOT send `epic-done` after each individual
 6. **Archive:**
    - Move the saga roadmap to `.ai-sagas/archive/`
    - The PRD stays in `.ai-sagas/docs/<slug>/` (it's a permanent reference)
-   - Commit and push on the saga branch
+   - Commit and push on `main`
 
 7. **Delete the orchestrator state file.** The saga is complete — no more orchestration context is needed:
    ```bash
@@ -744,12 +751,18 @@ Update an existing saga interactively — modify the PRD, add/remove/reorder epi
    **(g) Something else:**
    - Free-form. Parse the user's request and make the appropriate changes.
 
-6. **Commit the updated files:**
+6. **Commit the updated files to `main`:**
    ```bash
+   git stash  # if on a non-main branch with changes
+   git checkout main
    git add .ai-sagas/
    git commit -m "docs({slug}): update saga roadmap/PRD"
-   git push
+   git push origin main
+   git checkout -  # return to previous branch
+   git stash pop   # restore changes if stashed
    ```
+
+   If already on `main`, skip the stash/checkout steps.
 
 7. **Confirm** the changes and show the updated state.
 
@@ -837,7 +850,6 @@ created: YYYY-MM-DD
 
 # Saga: {title}
 
-- **Branch:** saga/{slug}
 - **PRD:** `.ai-sagas/docs/<slug>/prd.md`
 - **GitHub Issue:** #{number}
 - **Created:** YYYY-MM-DD
