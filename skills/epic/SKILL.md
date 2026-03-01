@@ -4,7 +4,7 @@ description: "Orchestrate multi-stage development initiatives through a plan-exe
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 6.0.0
+  version: 7.0.0
 ---
 
 # Epic
@@ -488,15 +488,34 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
    ```
    Read the stage's board item ID from the roadmap metadata. Skip if project board is not configured.
 
-2. **Enter QTM:**
+2. **Write the orchestrator state file** before entering QTM. This tells QTM to run in orchestrator mode (drain-and-return, no RFX, no `/clear` between tasks):
+   ```bash
+   cat > .ai-queue/.orchestrator-state.json << EOF
+   {
+     "role": "orchestrator",
+     "pid": $PPID,
+     "epic": {
+       "roadmap": "<epic-roadmap-path>",
+       "currentStage": <N>,
+       "stageBranch": "<prefix>/<slug>/<stage-title-slug>",
+       "returnTo": "verify"
+     }
+   }
+   EOF
+   ```
+   If a saga is driving this epic, include the `saga` field as well (see Saga skill docs).
+
+3. **Enter QTM:**
    ```
    /q
    ```
-   Agents claim and execute segments. Each segment runs in a worktree branched off the stage branch and merges back to the stage branch (not the epic branch or main). QTM will drain all queued segments, then exit.
+   Because the orchestrator state file exists, QTM will run in **orchestrator mode**: the agent claims and executes segments (like a worker), but when the queue is drained, it **exits QTM and returns control here** instead of entering RFX. Each segment runs in a worktree branched off the stage branch and merges back to the stage branch (not the epic branch or main).
 
-3. **Monitor completion.** Wait for all segments of the current stage to be archived in `.ai-queue/_completed/`.
+4. **QTM has returned.** All claimable segments have been drained. Verify that all segments of the current stage are archived in `.ai-queue/_completed/`. If some remain active (owned by other agents), wait briefly and re-check, or proceed if only dependency-blocked tasks remain (they'll be handled in a subsequent iteration).
 
-4. **Update the roadmap:** Set this stage's status to `verifying`.
+5. **Update the roadmap:** Set this stage's status to `verifying`.
+
+6. **Proceed to Phase 4 (VERIFY).** Continue the lifecycle — do NOT exit or wait for user input.
 
 ---
 
@@ -571,7 +590,7 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
 
 6. **Send `work-queued` event via relay** (if relay is running) — same as BREAKDOWN step 8.
 
-7. **Immediately proceed to Phase 3 (EXECUTE).** Do not wait for user input — enter QTM right away to drain the fix tasks.
+7. **Immediately proceed to Phase 3 (EXECUTE).** Do not wait for user input — enter QTM right away to drain the fix tasks. Phase 3 will write/update the orchestrator state file before entering QTM.
 
 ---
 
@@ -772,6 +791,12 @@ After the human merges the epic PR:
 
    **Note:** Stage branches are already deleted by `gh pr merge --delete-branch` in Phase 6. The feature flag was already removed in Phase 7.
 
+5. **Clean up the orchestrator state file.** If `.ai-queue/.orchestrator-state.json` exists and belongs to this agent (PID matches), delete it:
+   ```bash
+   rm -f .ai-queue/.orchestrator-state.json
+   ```
+   If a saga is driving this epic, do NOT delete the state file — the saga skill will update it for the next epic. Only delete if this is a standalone epic (no `saga` field in the state file).
+
 ---
 
 ## `epic status`
@@ -919,13 +944,15 @@ When invoked without arguments, `/epic` resumes execution of the active epic as 
 
 ### Procedure
 
-1. **Find the active roadmap.** Scan `.ai-epics/roadmaps/` for a file with `Status: in-progress`. If none found, print "No active epic found. Use `/epic {goal}` to start one." and exit. If multiple are found, use the most recently modified one and warn.
+1. **Check for orchestrator state file first.** Before scanning roadmaps, check if `QUEUE_DIR/.orchestrator-state.json` exists and its `pid` matches `$PPID`. If so, this agent is recovering from a `/clear` during an active orchestration session — read the state file to determine the epic roadmap and `returnTo` phase, then skip to step 5 using the state file data. This is the **post-clear recovery path**.
 
-2. **Read the roadmap.** Extract the epic metadata: branch, flag, issue number, stage list with statuses.
+2. **Find the active roadmap.** Scan `.ai-epics/roadmaps/` for a file with `Status: in-progress`. If none found, print "No active epic found. Use `/epic {goal}` to start one." and exit. If multiple are found, use the most recently modified one and warn.
 
-3. **Ensure relay is running.** Invoke `/relay` (start or reclaim).
+3. **Read the roadmap.** Extract the epic metadata: branch, flag, issue number, stage list with statuses.
 
-4. **Claim the orchestrator role.** Connect to relay and identify as `orchestrator`:
+4. **Ensure relay is running.** Invoke `/relay` (start or reclaim).
+
+5. **Claim the orchestrator role.** Connect to relay and identify as `orchestrator`:
    ```bash
    RESULT=$(node -e "
    const s = require('net').connect(process.argv[1]);
@@ -942,7 +969,7 @@ When invoked without arguments, `/epic` resumes execution of the active epic as 
    - If `role-taken` → print "Another orchestrator is running (pid {X}). Falling back to worker mode." → invoke `/q` instead and exit this procedure.
    - If `state` response with `orchestrator: true` → role accepted, continue.
 
-5. **Determine the current phase** from the roadmap. Find the first stage that is NOT `complete`:
+6. **Determine the current phase** from the roadmap (or from the state file's `returnTo` if using post-clear recovery). Find the first stage that is NOT `complete`:
 
    | Stage status | Action |
    |-------------|--------|
@@ -953,11 +980,13 @@ When invoked without arguments, `/epic` resumes execution of the active epic as 
    | `iterating` | Enter Phase 5 (ITERATE) |
    | All stages `complete` | Enter Phase 7 (PR) |
 
-6. **Enter the lifecycle loop.** Execute the determined phase and continue the normal phase flow (EXECUTE → VERIFY → ITERATE/ADVANCE → next stage → PR → COMPLETION). Each phase transition follows the standard epic flow — including `/clear` between phases as specified in the Context Isolation Rules.
+   **State file override:** If the state file's `returnTo` is `"verify"` but the roadmap shows `executing`, trust the state file — QTM has already drained and the orchestrator should proceed to VERIFY.
+
+7. **Enter the lifecycle loop.** Execute the determined phase and continue the normal phase flow (EXECUTE → VERIFY → ITERATE/ADVANCE → next stage → PR → COMPLETION). Each phase transition follows the standard epic flow.
 
 ### Context freshness
 
-`/epic` (bare) starts with a clean context. Each phase clears context via `/clear`. This prevents the context bloat that would occur if a single agent ran PLAN + BREAKDOWN + EXECUTE + VERIFY in sequence.
+`/epic` (bare) starts with a clean context. The orchestrator state file preserves the return path across context boundaries, so `/clear` between phases does not break the lifecycle. After clearing, the agent re-reads the state file to recover its position in the lifecycle.
 
 ---
 
@@ -1008,11 +1037,13 @@ If `gh` CLI calls fail (auth issues, rate limits):
 |-------|---------------|-------|
 | PLAN | No (first phase) | Broad codebase |
 | BREAKDOWN | Yes (`/clear`) | Roadmap stage section + relevant source |
-| EXECUTE | Yes (Q handles) | Instruction file + scoped files |
-| VERIFY | Yes (`/clear`) | Test output + acceptance criteria |
-| ITERATE | Yes (`/clear`) | Failure analysis + relevant source |
+| EXECUTE | No (orchestrator preserves context; Q workers clear per-task) | Instruction file + scoped files |
+| VERIFY | Optional (`/clear` if context is large; recover via state file) | Test output + acceptance criteria |
+| ITERATE | Optional (`/clear` if context is large; recover via state file) | Failure analysis + relevant source |
 | PR | No (follows ADVANCE) | Git diff |
 | COMPLETION | No (follows PR) | Roadmap file |
+
+**Note:** The orchestrator state file (`.ai-queue/.orchestrator-state.json`) preserves the return path across `/clear` boundaries. If the orchestrator needs to `/clear` for context management, it MUST re-read the state file immediately after to recover its position in the lifecycle.
 
 ---
 

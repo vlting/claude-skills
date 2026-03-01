@@ -4,7 +4,7 @@ description: "Define, scope, and orchestrate large initiatives from idea to ship
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 1.0.0
+  version: 2.0.0
 ---
 
 # Saga
@@ -484,7 +484,41 @@ This phase runs when `/saga` (bare) is invoked.
    - This is the standard `/epic` (bare) behavior, but driven by the saga orchestrator instead of a separate invocation.
    - Workers (`/q`) in other terminals participate as usual.
 
-10. **When the epic completes** (Phase 7: PR is done, PR is created and ready for review), return to saga context. Proceed to Phase 6 (REVIEW).
+   **Orchestrator state file integration:** When the epic's Phase 3 (EXECUTE) writes the orchestrator state file, it MUST include the `saga` field so that post-clear recovery can trace back to the saga context:
+   ```json
+   {
+     "role": "orchestrator",
+     "pid": 36295,
+     "saga": {
+       "roadmap": ".ai-sagas/roadmaps/<slug>.md",
+       "currentEpic": <N>
+     },
+     "epic": {
+       "roadmap": ".ai-epics/roadmaps/YYYY-MM-DD-<epic-slug>.md",
+       "currentStage": <N>,
+       "stageBranch": "<prefix>/<slug>/<stage-title-slug>",
+       "returnTo": "verify"
+     }
+   }
+   ```
+   The `saga` field is what distinguishes a saga-driven epic from a standalone epic. It enables the agent to recover the full saga → epic → stage context after any `/clear`.
+
+10. **When the epic completes** (Phase 7: PR is done, PR is created and ready for review), the epic's COMPLETION phase will detect the `saga` field in the state file and **skip deleting it**. Control returns to the saga orchestrator. Update the state file to reflect that the epic is done and the saga should proceed to REVIEW:
+    ```bash
+    # Update state file — remove epic, keep saga context
+    cat > .ai-queue/.orchestrator-state.json << EOF
+    {
+      "role": "orchestrator",
+      "pid": $PPID,
+      "saga": {
+        "roadmap": ".ai-sagas/roadmaps/<slug>.md",
+        "currentEpic": <N>,
+        "returnTo": "review"
+      }
+    }
+    EOF
+    ```
+    Proceed to Phase 6 (REVIEW).
 
 ---
 
@@ -574,9 +608,14 @@ Between epics, keep workers alive. Do NOT send `epic-done` after each individual
    - The PRD stays in `.ai-sagas/docs/<slug>/` (it's a permanent reference)
    - Commit and push on the saga branch
 
-7. **Call `/relay stop`** (smart stop — last agent out turns off the lights).
+7. **Delete the orchestrator state file.** The saga is complete — no more orchestration context is needed:
+   ```bash
+   rm -f .ai-queue/.orchestrator-state.json
+   ```
 
-8. **Print final summary:**
+8. **Call `/relay stop`** (smart stop — last agent out turns off the lights).
+
+9. **Print final summary:**
    ```
    --- Saga Complete: {title} ---
    PRD: .ai-sagas/docs/{slug}/prd.md
@@ -722,22 +761,25 @@ When invoked without arguments, `/saga` resumes execution of the active saga.
 
 ### Procedure
 
-1. **Find the active saga roadmap.** Scan `.ai-sagas/roadmaps/` for a file with `Status: in-progress`. If none found, print "No active saga found. Use `/saga {goal}` to start one." and exit.
+1. **Check for orchestrator state file first.** Before scanning roadmaps, check if `.ai-queue/.orchestrator-state.json` exists and its `pid` matches `$PPID`. If the state file has a `saga` field, this agent is recovering from a `/clear` during an active saga orchestration session. Read the saga roadmap path and `returnTo` phase from the state file, then skip to step 4 using the state file data. If the state file also has an `epic` field, the agent was mid-epic — resume at the epic level first (delegate to `/epic` bare resume logic which will handle the epic `returnTo` phase, then return to saga context). This is the **post-clear recovery path**.
 
-2. **Read the saga roadmap.** Extract epic list, dependencies, statuses, PRD path.
+2. **Find the active saga roadmap.** Scan `.ai-sagas/roadmaps/` for a file with `Status: in-progress`. If none found, print "No active saga found. Use `/saga {goal}` to start one." and exit.
 
-3. **Ensure relay is running.** Invoke `/relay`.
+3. **Read the saga roadmap.** Extract epic list, dependencies, statuses, PRD path.
 
-4. **Determine the current state:**
+4. **Ensure relay is running.** Invoke `/relay`.
+
+5. **Determine the current state** (from the roadmap, or from the state file's `returnTo` if using post-clear recovery):
 
    | State | Action |
    |-------|--------|
+   | State file says `returnTo: "review"` | Enter Phase 6 (REVIEW) for the current epic |
    | An epic is `in-progress` | Resume that epic (enter epic orchestrator mode for it) |
    | No epic is in-progress, ready epics exist | Enter Phase 5 (EXECUTE) for the next ready epic |
    | All epics `complete` | Enter Phase 7 (COMPLETE) |
    | Dependency deadlock | HALT and notify |
 
-5. **Enter the execution loop.** Follow the EXECUTE → REVIEW → ADVANCE cycle until all epics are complete.
+6. **Enter the execution loop.** Follow the EXECUTE → REVIEW → ADVANCE cycle until all epics are complete.
 
 ---
 
