@@ -4,7 +4,7 @@ description: "Queue a task or drain the task queue."
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 11.0.0
+  version: 11.1.0
 ---
 
 # Q Command
@@ -451,26 +451,30 @@ When `RELAY_RUNNING=true`, RFX uses the relay socket for instant event-driven wa
    const s = require('net').connect(process.argv[1]);
    const events = new Set(['work-queued','epic-done','worker-disconnected']);
    s.write(JSON.stringify({type:'identify',role:'worker',pid:+(process.env.PPID||0)})+'\n');
+   const cycle = setTimeout(() => { console.log('RFX_CYCLE'); s.destroy(); }, 9*60*1000);
    s.on('data', d => {
      for (const line of d.toString().split('\n').filter(Boolean)) {
        try {
          const msg = JSON.parse(line);
          if (msg.type === 'event' && events.has(msg.event)) {
+           clearTimeout(cycle);
            console.log(JSON.stringify(msg));
            s.destroy();
          }
        } catch {}
      }
    });
-   s.on('error', () => { console.log('RFX_RECONNECT'); s.destroy(); });
+   s.on('error', () => { clearTimeout(cycle); console.log('RFX_RECONNECT'); s.destroy(); });
    " "$RELAY_SOCK")
    ```
-   This runs as a **single tool call** — blocks indefinitely until a relevant event arrives.
+   This runs as a **single tool call** with `timeout: 600000` (10 minutes). The script self-cycles before this limit is reached, so the Bash timeout should never fire — but setting it to the max provides a safety net.
 3. **Interpret the result:**
    - **`work-queued`**: Return to the drain loop (step 1) to claim and execute the new task.
    - **`worker-disconnected`**: The event includes the dead agent's PID and tasks. Run the orphan recovery protocol (step 6) to check if any of those tasks can be reclaimed. Then return to step 1.
    - **`epic-done`**: Exit QTM gracefully with the standard final status message.
    - **`RFX_RECONNECT`** (socket error): Run an orphan scan. If orphans are found, reclaim them and return to step 1. Otherwise, **re-enter RFX** (go back to step 2) — do NOT exit QTM.
+   - **`RFX_CYCLE`** (internal timeout — keeps RFX alive across Bash tool timeout boundaries): **Re-enter RFX** (go back to step 2). This is normal housekeeping, not an error.
+   - **Empty output or unexpected result** (Bash timeout fired, process killed, sleep/wake disruption): Treat identically to `RFX_CYCLE` — re-enter RFX. Log a brief note: `--- RFX cycle (recovered from stale connection) ---`
 
 #### RFX without relay (fallback)
 
@@ -483,6 +487,7 @@ When relay is not running, RFX falls back to filesystem polling:
 2. **Poll the queue** using a single bash command that checks every 15 seconds:
    ```bash
    QUEUE_DIR=".ai-queue"
+   START=$(date +%s)
    while true; do
      # Check for pending files (not -active, not -wip)
      FOUND=$(ls "$QUEUE_DIR"/*.md 2>/dev/null | xargs -I{} basename {} | grep -v -E '(-active|-wip)\.md$' || true)
@@ -490,11 +495,19 @@ When relay is not running, RFX falls back to filesystem polling:
        echo "ACTIONABLE: $FOUND"
        exit 0
      fi
+     NOW=$(date +%s)
+     if [ $((NOW - START)) -ge 540 ]; then
+       echo "RFX_CYCLE"
+       exit 0
+     fi
      sleep 15
    done
    ```
-   This runs as a **single tool call** — no context bloat from repeated checks. The loop runs indefinitely until actionable files appear.
-3. **If the poll finds actionable files** (`exit 0`): Exit RFX and return to the drain loop (step 1) to claim and execute the task normally.
+   This runs as a **single tool call** with `timeout: 600000` (10 minutes). The script self-cycles after ~9 minutes, before the Bash timeout fires — but setting it to the max provides a safety net.
+3. **Interpret the result:**
+   - **`ACTIONABLE: ...`** (actionable files found): Exit RFX and return to the drain loop (step 1) to claim and execute the task normally.
+   - **`RFX_CYCLE`** (internal timeout — keeps RFX alive across Bash tool timeout boundaries): **Re-enter RFX** (go back to step 2). This is normal housekeeping, not an error.
+   - **Empty output or unexpected result** (Bash timeout fired, process killed, sleep/wake disruption): Treat identically to `RFX_CYCLE` — re-enter RFX. Log a brief note: `--- RFX cycle (recovered from stale connection) ---`
 
 #### Common RFX behavior
 
