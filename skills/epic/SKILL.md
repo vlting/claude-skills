@@ -18,7 +18,9 @@ Orchestrates large development goals through a multi-stage iterative workflow. E
 ```
 /epic                        — Resume epic execution (orchestrator mode)
 /epic {goal description}     — Start a new epic
-epic init                    — First-time repo setup
+epic init                    — First-time repo setup (includes PM tool configuration)
+epic configure               — (Re)configure PM integration, ownership mode, notifications
+epic update                  — Update an existing epic (stages, criteria, metadata)
 epic status                  — Show current epic progress
 epic abort                   — Abort the current epic (preserves branches and files)
 ```
@@ -27,6 +29,8 @@ epic abort                   — Abort the current epic (preserves branches and 
 - `/epic` alone (no further text) → resume execution of the active epic
 - `/epic {text}` → start new epic
 - `epic init` → first-time setup (read `references/init.md` and follow its procedure)
+- `epic configure` → reconfigure PM tool and ownership (read `references/pm-integration.md`)
+- `epic update` → update an existing epic interactively
 - `epic status` → show progress
 - `epic abort` → abort
 
@@ -92,7 +96,8 @@ Two levels of feature flags exist in the epic system:
 ### Reference Documents
 
 - **Full architecture** → `references/architecture.md` (context isolation, storage model, skill topology, engineering best practices)
-- **`epic init` procedure** → `references/init.md` (first-time repo setup)
+- **`epic init` procedure** → `references/init.md` (first-time repo setup, includes PM configuration)
+- **PM integration** → `references/pm-integration.md` (tool abstraction, ownership modes, per-tool operations)
 - **Feature flags** → `references/feature-flags.md` (project-level flags, single TS module, flag lifecycle)
 
 ### Project Board Integration
@@ -232,9 +237,17 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
    - Aim for stages small enough that their segments total < 999 lines
    - If a stage will clearly exceed 999 lines, split it into sub-stages
 
-6. **Create the epic GitHub Issue and stage sub-issues.**
+6. **Create the epic issue and stage sub-issues.**
 
-   First, create the **parent epic issue**:
+   Read the PM configuration from `.ai-epics/docs/project-setup.md`. The behavior depends on the configured tool and ownership mode (see `references/pm-integration.md`):
+
+   - **owner mode:** Create the epic issue and stage sub-issues using the configured PM tool.
+   - **contributor mode:** Ask the user for the existing epic issue ID/URL. Skip sub-issue creation.
+   - **none:** Skip all PM operations.
+
+   The examples below show GitHub (owner mode). For other tools, consult `references/pm-integration.md`.
+
+   First, create the **parent epic issue** (owner mode only):
    ```bash
    gh issue create \
      --title "Epic: {title}" \
@@ -795,6 +808,108 @@ Abort the current epic without destroying work:
 5. **Inform the user** that the epic is aborted and where to find the preserved work
 
 **Note:** The feature flag and any code guards remain in the codebase. If flagged code was already merged to main, queue a `chore/` task to remove the flag entry from `config/flags.ts` and strip the code guards (keeping only the legacy/disabled code path, since the feature is being abandoned).
+
+**PM Integration:** In contributor mode, do NOT close issues — only add a comment noting the abort. In `none` mode, skip PM operations entirely.
+
+---
+
+## `epic configure`
+
+(Re)configure PM integration, ownership mode, and notifications. This can be run at any time to change settings.
+
+### Procedure
+
+1. **Read current configuration** from `.ai-epics/docs/project-setup.md` (if it exists). Show current values.
+
+2. **Walk through the configuration questions** (see `references/pm-integration.md` → Configuration Flow):
+   - Which PM tool? (GitHub Issues / Linear / Jira / None)
+   - Do you own epics? (owner / contributor)
+   - Tool-specific questions (project board, team key, etc.)
+   - Notification topic? (ntfy, optional)
+
+3. **Write the updated configuration** to `.ai-epics/docs/project-setup.md`.
+
+4. **Commit the change:**
+   ```bash
+   git add .ai-epics/docs/project-setup.md
+   git commit -m "chore: update PM integration configuration"
+   ```
+
+---
+
+## `epic update`
+
+Update an existing epic interactively — add/remove stages, change criteria, adjust metadata.
+
+### Procedure
+
+1. **Find active epics.** Scan `.ai-epics/roadmaps/` for files with status that is NOT `done` or `aborted`.
+
+2. **Select the epic:**
+   - If **only one** active epic: select it automatically. Print: "Active epic: {title}."
+   - If **multiple** active epics: present a numbered list and ask the user to choose.
+   - If **none**: print "No active epics found." and exit.
+
+3. **Read the selected epic's roadmap.** Show current state: stages, statuses, criteria.
+
+4. **Ask what to update.** Present options:
+   ```
+   What would you like to update?
+   a) Add a stage
+   b) Remove or skip a stage
+   c) Update a stage's objective or acceptance criteria
+   d) Reorder stages
+   e) Update epic metadata (title, linked issues)
+   f) Link to an existing PM ticket
+   g) Something else
+   ```
+
+5. **Walk through the changes conversationally:**
+
+   **(a) Add a stage:**
+   - Ask for the stage title, objective, and acceptance criteria.
+   - Ask where to insert it (after which stage).
+   - Add the stage to the roadmap with status `pending`.
+   - If the epic is in-progress, note that existing stage numbering may shift.
+
+   **(b) Remove or skip a stage:**
+   - Show the list of non-complete stages.
+   - Ask which one to remove/skip.
+   - Set its status to `skipped` (don't delete — preserve audit trail).
+   - Update the roadmap.
+
+   **(c) Update stage objective or criteria:**
+   - Ask which stage to update.
+   - Show current objective and criteria.
+   - Ask for the changes.
+   - Update the roadmap and the corresponding GitHub sub-issue (if PM is configured).
+
+   **(d) Reorder stages:**
+   - Show current order.
+   - Ask for the new order.
+   - Validate that completed stages stay in place (can't reorder finished work).
+   - Update the roadmap.
+
+   **(e) Update epic metadata:**
+   - Show current metadata (title, branch, flag, issue).
+   - Ask what to change. Title and linked issues can be updated. Branch and flag cannot (they're structural).
+
+   **(f) Link to PM ticket:**
+   - Ask for the issue ID/URL.
+   - Store it in the roadmap.
+   - Useful in contributor mode when the epic was created before PM tickets existed.
+
+   **(g) Something else:**
+   - Free-form. Parse the user's request and make the appropriate changes.
+
+6. **Commit the updated roadmap:**
+   ```bash
+   git add .ai-epics/roadmaps/YYYY-MM-DD-{slug}.md
+   git commit -m "docs({slug}): update epic roadmap"
+   git push
+   ```
+
+7. **Confirm** the changes and show the updated state.
 
 ---
 

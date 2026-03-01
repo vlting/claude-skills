@@ -18,6 +18,8 @@ Takes a high-level goal ("build a consulting dashboard") and guides it from idea
 ```
 /saga                        — Resume saga execution (orchestrator mode)
 /saga {goal description}     — Start a new saga
+saga configure               — (Re)configure PM integration, ownership mode, notifications
+saga update                  — Update an existing saga (PRD, epics, dependencies)
 saga status                  — Show current saga progress
 saga abort                   — Abort the current saga (preserves all work)
 ```
@@ -25,6 +27,8 @@ saga abort                   — Abort the current saga (preserves all work)
 **Disambiguation:**
 - `/saga` alone (no further text) → resume execution of the active saga
 - `/saga {text}` → start new saga (interactive)
+- `saga configure` → reconfigure PM tool and ownership (delegates to `epic configure`, since config is shared)
+- `saga update` → update an existing saga interactively
 - `saga status` → show progress
 - `saga abort` → abort
 
@@ -314,7 +318,16 @@ If no notification channel is configured, fall back to `osascript` (desktop). If
    **Status:** pending
    ```
 
-5. **Create the saga GitHub Issue:**
+5. **Create the saga issue in the configured PM tool.**
+
+   Read the PM configuration from `.ai-epics/docs/project-setup.md` (see epic's `references/pm-integration.md`):
+   - **owner mode:** Create the saga issue using the configured PM tool.
+   - **contributor mode:** Ask the user for the existing issue ID/URL. Skip issue creation.
+   - **none:** Skip all PM operations.
+
+   The examples below show GitHub (owner mode). For other tools, consult epic's `references/pm-integration.md`.
+
+   **Create the saga GitHub Issue (owner mode):**
 
    ```bash
    gh issue create \
@@ -606,9 +619,100 @@ Abort the current saga without destroying work:
 1. **Do NOT delete** any branches, roadmaps, PRDs, or completed work.
 2. **Update the saga roadmap:** Set status to `aborted`.
 3. **Abort any in-progress epic** by invoking `epic abort` for it.
-4. **Close the saga GitHub Issue** with a comment: "Saga aborted. All work preserved."
+4. **Close the saga issue** (owner mode only) with a comment: "Saga aborted. All work preserved." In contributor mode, add a comment but do not close.
 5. **Notify the user.**
 6. **Inform the user** where to find preserved work (branches, PRDs, tech specs).
+
+---
+
+## `saga configure`
+
+(Re)configure PM integration, ownership mode, and notifications. Delegates to `epic configure` since the configuration is shared (both saga and epic read from `.ai-epics/docs/project-setup.md`).
+
+### Procedure
+
+1. Run the `epic configure` flow (see epic's SKILL.md → `epic configure`).
+2. That's it — saga reads the same config file.
+
+If `epic configure` hasn't been run yet (no project-setup.md exists), `saga configure` will create it with the full configuration flow.
+
+---
+
+## `saga update`
+
+Update an existing saga interactively — modify the PRD, add/remove/reorder epics, change dependencies.
+
+### Procedure
+
+1. **Find active sagas.** Scan `.ai-sagas/roadmaps/` for files with status that is NOT `done` or `aborted`.
+
+2. **Select the saga:**
+   - If **only one** active saga: select it automatically. Print: "Active saga: {title}."
+   - If **multiple** active sagas: present a numbered list and ask the user to choose.
+   - If **none**: print "No active sagas found." and exit.
+
+3. **Read the selected saga's roadmap and PRD.** Show current state: epics, dependencies, statuses.
+
+4. **Ask what to update.** Present options:
+   ```
+   What would you like to update?
+   a) Update the PRD (requirements have changed)
+   b) Add an epic
+   c) Remove or skip an epic
+   d) Reorder epics or change dependencies
+   e) Update saga metadata (title, scope boundary)
+   f) Link to an existing PM ticket
+   g) Something else
+   ```
+
+5. **Walk through the changes conversationally:**
+
+   **(a) Update the PRD:**
+   - Ask what changed. New requirements? Changed scope? Removed features?
+   - Read the current PRD.
+   - Make the edits. Update functional requirements, scope boundary, or constraints.
+   - Check if the changes affect any existing epics. If so, note which epics may need adjustment.
+   - Commit the updated PRD.
+
+   **(b) Add an epic:**
+   - Ask for the epic title, objective, PRD coverage (which FRs), and estimated stages.
+   - Ask where it fits in the dependency graph (depends on which epics? blocks which epics?).
+   - Add the epic to the saga roadmap.
+   - Create a PM issue for it if in owner mode.
+   - Commit the updated roadmap.
+
+   **(c) Remove or skip an epic:**
+   - Show the list of non-complete epics.
+   - Ask which one to remove/skip.
+   - Set its status to `skipped` (don't delete — preserve audit trail).
+   - Check if any other epics depend on it. If so, warn the user and ask how to handle (remove dependency, skip those too, etc.).
+   - Update the roadmap.
+
+   **(d) Reorder epics or change dependencies:**
+   - Show current order and dependency graph.
+   - Ask for the changes.
+   - Validate: completed epics can't be reordered. Circular dependencies are rejected.
+   - Update the roadmap.
+
+   **(e) Update saga metadata:**
+   - Show current metadata.
+   - Ask what to change. Title and scope boundary can be updated.
+
+   **(f) Link to PM ticket:**
+   - Ask for the issue ID/URL.
+   - Store it in the roadmap.
+
+   **(g) Something else:**
+   - Free-form. Parse the user's request and make the appropriate changes.
+
+6. **Commit the updated files:**
+   ```bash
+   git add .ai-sagas/
+   git commit -m "docs({slug}): update saga roadmap/PRD"
+   git push
+   ```
+
+7. **Confirm** the changes and show the updated state.
 
 ---
 
