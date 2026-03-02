@@ -383,7 +383,7 @@ If no notification channel is configured, fall back to `osascript` (desktop). If
    - **Project Node ID:** PVT_xxxxx
    - **Project Item ID:** PVTI_xxxxx          ← saga issue's board item
    - **Status Field ID:** PVTSSF_xxxxx
-   - **Status Options:** Planning=xxx, Todo=xxx, In Progress=xxx, Done=xxx
+   - **Status Options:** Planning=xxx, Todo=xxx, In Progress=xxx, In Review=xxx, Done=xxx
    ```
 
    If any step fails (missing scope, project not found), log the error and continue without board tracking.
@@ -628,6 +628,16 @@ Between epics, keep workers alive. Do NOT send `epic-done` after each individual
    gh issue close $SAGA_ISSUE_NUMBER --repo OWNER/REPO \
      --comment "Saga completed. All epics delivered."
    ```
+
+   Then move it to "Done" on the project board (if configured):
+   ```bash
+   gh project item-edit \
+     --project-id "$PROJECT_NODE_ID" \
+     --id "$SAGA_ITEM_NODE_ID" \
+     --field-id "$STATUS_FIELD_ID" \
+     --single-select-option-id "$DONE_OPTION_ID"
+   ```
+   Read the saga's board item ID from the roadmap metadata. Skip if project board is not configured. (The `issue-to-done` workflow also handles this as a safety net.)
 
 5. **Notify the user:**
    ```bash
