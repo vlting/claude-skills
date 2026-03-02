@@ -151,7 +151,24 @@ function cleanup() {
 }
 
 process.on('exit', cleanup);
-process.on('SIGTERM', () => { cleanup(); process.exit(0); });
+
+// SIGTERM: refuse to die if identified clients are still connected.
+// This prevents an agent from accidentally killing relay while others depend on it.
+// A second SIGTERM (or SIGINT) forces shutdown regardless.
+let forceNextSignal = false;
+process.on('SIGTERM', () => {
+  const identified = [...clients.values()].filter(c => c.role !== 'unknown');
+  if (identified.length > 0 && !forceNextSignal) {
+    console.log(`relay: SIGTERM ignored — ${identified.length} identified client(s) still connected. Send again to force.`);
+    forceNextSignal = true;
+    // Reset force flag after 10 seconds so stale double-kills don't accumulate
+    setTimeout(() => { forceNextSignal = false; }, 10000);
+    return;
+  }
+  cleanup();
+  process.exit(0);
+});
+
 process.on('SIGINT', () => { cleanup(); process.exit(0); });
 
 server.listen(SOCKET_PATH, () => {

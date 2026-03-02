@@ -4,7 +4,7 @@ description: "Queue a task or drain the task queue."
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 11.1.0
+  version: 11.2.0
 ---
 
 # Q Command
@@ -160,11 +160,48 @@ At QTM startup (before the first scan), ensure relay is running:
 
 ### Stopping relay at QTM exit
 
-When QTM exits (queue drained, `epic-done` received, or user termination), call `/relay stop`. The smart stop checks connected clients:
-- **Other agents still connected:** Stop is refused (no-op). Relay stays alive for them.
-- **No agents connected:** Relay is stopped. This agent was the last one out.
+When QTM exits (queue drained, `epic-done` received, or user termination), attempt to stop relay using the **smart stop protocol below**. Never bypass this by manually killing the relay PID — doing so kills relay for ALL agents across all terminals.
+
+**Smart stop procedure (inline — do NOT shortcut this):**
+
+```bash
+RELAY_SOCK="$(pwd)/.ai-relay/relay.sock"
+RELAY_PID_FILE="$(pwd)/.ai-relay/relay.pid"
+if [ -f "$RELAY_PID_FILE" ] && kill -0 "$(cat "$RELAY_PID_FILE")" 2>/dev/null && [ -S "$RELAY_SOCK" ]; then
+  CLIENT_COUNT=$(node -e "
+  const s = require('net').connect(process.argv[1]);
+  s.write(JSON.stringify({type:'status'})+'\n');
+  s.on('data', d => {
+    for (const line of d.toString().split('\n').filter(Boolean)) {
+      try {
+        const r = JSON.parse(line);
+        if (r.type==='status-response') {
+          // Count only identified clients (not 'unknown' transient connections)
+          const identified = (r.clients||[]).filter(c => c.role !== 'unknown');
+          console.log(identified.length);
+          s.destroy();
+        }
+      } catch {}
+    }
+  });
+  setTimeout(() => { console.log('-1'); s.destroy(); }, 2000);
+  " "$RELAY_SOCK")
+  if [ "$CLIENT_COUNT" = "0" ]; then
+    kill "$(cat "$RELAY_PID_FILE")" 2>/dev/null
+    echo "Relay stopped."
+  elif [ "$CLIENT_COUNT" = "-1" ]; then
+    echo "Relay status query timed out. Not stopping."
+  else
+    echo "Relay still has $CLIENT_COUNT connected agent(s). Not stopping."
+  fi
+else
+  echo "Relay is not running."
+fi
+```
 
 This is called at every QTM exit path — the smart stop makes it safe to call unconditionally.
+
+> **CRITICAL: Never `kill` the relay PID directly.** The relay server is shared across all agents in all terminals. Always use the smart stop above, which checks for connected clients first. The relay server also has a defense-in-depth SIGTERM guard that refuses to die if identified clients are connected, but agents must not rely on this — always use the smart stop protocol.
 
 ### Event emission
 
