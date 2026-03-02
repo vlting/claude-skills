@@ -370,8 +370,7 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
     - [ ] Stage 2: {title}
     ...
 
-    > This PR accumulates all stage work. Each stage is reviewed via its own PR to `epic/<slug>`.
-    > When all stages are complete, this PR will be rebased on `main` and marked ready for review.
+    > Each stage is reviewed via its own PR to `epic/<slug>`. Links appear as stages complete.
 
     Closes #{EPIC_ISSUE_NUMBER}
 
@@ -643,11 +642,12 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
    git pull origin epic/<slug>
    ```
 
-1.6. **Check off the stage in the epic draft PR body.** Read the epic PR body, find the checkbox for this stage, and mark it complete:
+1.6. **Check off the stage in the epic draft PR body and link the stage PR.** Read the epic PR body, find the checkbox for this stage, and replace the full line with a checked entry that includes the stage PR number (GitHub auto-links `#N`, giving reviewers one-click access to the stage diff):
    ```bash
+   STAGE_PR_NUMBER=$(echo "$STAGE_PR_URL" | grep -o '[0-9]*$')
    EPIC_PR_NUMBER=$(gh pr list --base main --head epic/<slug> --json number -q '.[0].number')
    BODY=$(gh pr view $EPIC_PR_NUMBER --repo OWNER/REPO --json body -q '.body')
-   UPDATED=$(echo "$BODY" | sed "s/- \[ \] Stage $STAGE_NUMBER: /- [x] Stage $STAGE_NUMBER: /")
+   UPDATED=$(echo "$BODY" | sed "s|- \[ \] Stage $STAGE_NUMBER: .*|- [x] Stage $STAGE_NUMBER: $STAGE_TITLE (#$STAGE_PR_NUMBER)|")
    gh pr edit $EPIC_PR_NUMBER --repo OWNER/REPO --body "$UPDATED"
    ```
 
