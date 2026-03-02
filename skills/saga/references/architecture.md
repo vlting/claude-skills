@@ -134,7 +134,7 @@ Terminal 3: /q             → worker (stays alive across epics)
 
 | Event | Sent by | When | Effect |
 |-------|---------|------|--------|
-| `work-queued` | Saga/Epic orchestrator | Segments queued for a stage | Workers wake from RFX, drain tasks |
+| `work-queued` | Saga/Epic orchestrator | Segments queued for a stage | Workers wake up, drain tasks |
 | `work-queued` | Saga orchestrator | Between epics (keep workers alive) | Workers stay alive, await next epic's tasks |
 | `epic-done` | Saga orchestrator | After the LAST epic completes | Workers exit gracefully |
 

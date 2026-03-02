@@ -58,7 +58,7 @@ Together, they enable ambitious tasks (e.g., "build a fully accessible kitchen-s
 |-------|--------------|------------|--------|
 | PLAN | Broad codebase | Planning agent | Roadmap file, GH issue, feature branch |
 | BREAKDOWN | Stage-scoped | Research agent (fresh context) | Q instruction files |
-| EXECUTE | Segment-scoped | QTM agents (isolated per segment) | Commits on feature branch |
+| EXECUTE | Segment-scoped | Drain loop agents (isolated per segment) | Commits on feature branch |
 | VERIFY | Test output only | Evaluation agent (fresh context) | Pass/fail + analysis |
 | ITERATE | Failure-scoped | Research agent (fresh context) | Fix instruction files |
 | PR | Diff-scoped | PR agent | Pull request(s) |
@@ -89,7 +89,7 @@ Context isolation is the most critical architectural concern. Without it, agents
 
 ### How Context Clearing Works
 
-- **Between QTM tasks:** Q's existing `/clear` mechanism drops the conversation context after each task is archived to `_completed/`. The next task starts with a clean slate.
+- **Between drain loop tasks:** Q's existing `/clear` mechanism drops the conversation context after each task is archived to `_completed/`. The next task starts with a clean slate.
 - **Between epic phases:** The `epic` skill delegates each phase to a fresh agent context (via Task tool subagents or explicit `/clear`). The roadmap file and instruction files serve as the durable state that persists across context boundaries.
 - **Within a segment:** No clearing needed. A single segment is small enough to fit in one context window.
 
@@ -248,7 +248,7 @@ Three skills with distinct responsibilities:
 
 ### Why Three Skills
 
-Q is 300+ lines of dense operational logic (QTM claiming, parallel safety, file naming, merge lifecycle). Epic adds strategic planning, iteration loops, quality gates, and PR management. Relay is a focused ~140-line server that handles inter-agent communication — a concern orthogonal to both task execution and orchestration. Mixing any two would create a monolithic skill with confused responsibilities.
+Q is 300+ lines of dense operational logic (task claiming, parallel safety, file naming, merge lifecycle). Epic adds strategic planning, iteration loops, quality gates, and PR management. Relay is a focused ~140-line server that handles inter-agent communication — a concern orthogonal to both task execution and orchestration. Mixing any two would create a monolithic skill with confused responsibilities.
 
 ### Why Not More Skills
 
@@ -263,13 +263,13 @@ epic                           relay                       q
 ┌────────────────────┐         ┌──────────────────┐       ┌─────────────────────────┐
 │ /epic {goal}:      │         │                  │       │                         │
 │  PLAN + BREAKDOWN  │──start─▶│ relay server     │       │                         │
-│  (exit)            │──event─▶│ "work-queued" ──────────▶│ workers wake from RFX   │
+│  (exit)            │──event─▶│ "work-queued" ──────────▶│ workers wake up          │
 │                    │         │                  │       │                         │
 │ /epic (bare):      │         │                  │       │                         │
 │  claim orchestrator│──ident─▶│ role: orch ✓     │       │                         │
-│  EXECUTE           │─────────│─────────────────────────▶│ /q (QTM drain)          │
+│  EXECUTE           │─────────│─────────────────────────▶│ /q (drain loop)         │
 │  VERIFY            │         │                  │       │                         │
-│  ITERATE           │──event─▶│ "work-queued" ──────────▶│ workers wake from RFX   │
+│  ITERATE           │──event─▶│ "work-queued" ──────────▶│ workers wake up          │
 │  ADVANCE / PR      │         │                  │       │                         │
 │  COMPLETE          │──event─▶│ "epic-done"  ──────────▶│ workers exit            │
 └────────────────────┘         └──────────────────┘       └─────────────────────────┘

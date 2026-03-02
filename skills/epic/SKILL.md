@@ -4,7 +4,7 @@ description: "Orchestrate multi-stage development initiatives through a plan-exe
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 7.0.0
+  version: 7.1.0
 ---
 
 # Epic
@@ -43,9 +43,9 @@ Epic is the orchestration layer. Q is the execution engine. Relay is the communi
 ```
 epic (orchestrator)              relay (communication)           q (execution engine)
 ┌──────────────────────┐         ┌─────────────────────┐        ┌───────────────────────┐
-│ PLAN → BREAKDOWN ──────event──▶│ "work-queued"  ─────────────▶│ workers wake from RFX │
-│ EXECUTE (/q) ─────────────────────────────────────────────────▶│ QTM drain loop        │
-│ VERIFY → ITERATE ──────event──▶│ "work-queued"  ─────────────▶│ workers wake from RFX │
+│ PLAN → BREAKDOWN ──────event──▶│ "work-queued"  ─────────────▶│ workers wake up       │
+│ EXECUTE (/q) ─────────────────────────────────────────────────▶│ drain loop            │
+│ VERIFY → ITERATE ──────event──▶│ "work-queued"  ─────────────▶│ workers wake up       │
 │ PR → COMPLETE ─────────event──▶│ "epic-done"    ─────────────▶│ workers exit          │
 └──────────────────────┘         └─────────────────────┘        └───────────────────────┘
 ```
@@ -75,16 +75,16 @@ Terminal 3: /q             → worker (drains tasks, stays alive via relay)
 **Role enforcement:** When `/epic` (bare) starts, it connects to relay as `orchestrator`. If another orchestrator is already connected, relay responds with `role-taken` and the agent falls back to `/q` (worker mode). Only one orchestrator per epic.
 
 **Worker lifecycle with relay:**
-1. Worker enters QTM, drains available tasks
-2. Queue empties → enters RFX mode
-3. RFX blocks on relay socket (no polling)
+1. Worker enters the drain loop, drains available tasks
+2. Queue empties → starts waiting for new tasks
+3. Idle waiting blocks on relay socket (no polling)
 4. Orchestrator finishes VERIFY → ITERATE → BREAKDOWN → sends `work-queued`
 5. Workers wake instantly, re-enter drain loop
 6. Repeat until orchestrator sends `epic-done`
 
 Both Q workers and the Epic orchestrator call `/relay stop` on exit. The smart stop refuses if agents are still connected — only the last agent out actually stops relay. This eliminates the race condition between Epic sending `epic-done` and workers disconnecting.
 
-Q workers also start relay at QTM startup if it's not already running, so relay is always available even if workers start before the orchestrator.
+Q workers also start relay at drain loop startup if it's not already running, so relay is always available even if workers start before the orchestrator.
 
 ### Feature Flags
 
@@ -465,7 +465,7 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
 
 7. **Update the roadmap:** Set this stage's status to `executing` (or `awaiting-review` if `--no-auto` was used and the walkthrough has not yet completed).
 
-8. **Send `work-queued` event via relay** (if relay is running). This wakes any worker agents (`/q`) that are waiting in RFX mode:
+8. **Send `work-queued` event via relay** (if relay is running). This wakes any worker agents (`/q`) that are waiting for new tasks:
    ```bash
    node -e "
    const s = require('net').connect(process.argv[1]);
@@ -497,7 +497,7 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
 
    > **IMPORTANT: Only stage sub-issues move to "In Progress".** Do NOT move the epic issue itself — it stays in "Planning" until COMPLETION moves it to "Done".
 
-2. **Write the orchestrator state file** before entering QTM. This tells QTM to run in orchestrator mode (drain-and-return, no RFX, no `/clear` between tasks):
+2. **Write the orchestrator state file** before entering the drain loop. This tells the drain loop to run in orchestrator mode (drain-and-return, no idle waiting, no `/clear` between tasks):
    ```bash
    cat > .ai-queue/.orchestrator-state.json << EOF
    {
@@ -514,13 +514,13 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
    ```
    If a saga is driving this epic, include the `saga` field as well (see Saga skill docs).
 
-3. **Enter QTM:**
+3. **Enter the drain loop:**
    ```
    /q
    ```
-   Because the orchestrator state file exists, QTM will run in **orchestrator mode**: the agent claims and executes segments (like a worker), but when the queue is drained, it **exits QTM and returns control here** instead of entering RFX. Each segment runs in a worktree branched off the stage branch and merges back to the stage branch (not the epic branch or main).
+   Because the orchestrator state file exists, the drain loop will run in **orchestrator mode**: the agent claims and executes segments (like a worker), but when the queue is drained, it **exits and returns control here** instead of waiting for new tasks. Each segment runs in a worktree branched off the stage branch and merges back to the stage branch (not the epic branch or main).
 
-4. **QTM has returned.** All claimable segments have been drained. Verify that all segments of the current stage are archived in `.ai-queue/_completed/`. If some remain active (owned by other agents), wait briefly and re-check, or proceed if only dependency-blocked tasks remain (they'll be handled in a subsequent iteration).
+4. **The drain loop has returned.** All claimable segments have been drained. Verify that all segments of the current stage are archived in `.ai-queue/_completed/`. If some remain active (owned by other agents), wait briefly and re-check, or proceed if only dependency-blocked tasks remain (they'll be handled in a subsequent iteration).
 
 5. **Update the roadmap:** Set this stage's status to `verifying`.
 
@@ -599,7 +599,7 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
 
 6. **Send `work-queued` event via relay** (if relay is running) — same as BREAKDOWN step 8.
 
-7. **Immediately proceed to Phase 3 (EXECUTE).** Do not wait for user input — enter QTM right away to drain the fix tasks. Phase 3 will write/update the orchestrator state file before entering QTM.
+7. **Immediately proceed to Phase 3 (EXECUTE).** Do not wait for user input — enter the drain loop right away to execute the fix tasks. Phase 3 will write/update the orchestrator state file before entering the drain loop.
 
 ---
 
@@ -975,12 +975,12 @@ When invoked without arguments, `/epic` resumes execution of the active epic as 
    |-------------|--------|
    | `pending` | Enter Phase 2 (BREAKDOWN) for this stage |
    | `awaiting-review` | Enter Phase 2 (BREAKDOWN) — review walkthrough may be needed |
-   | `executing` | Enter Phase 3 (EXECUTE) — resume QTM |
+   | `executing` | Enter Phase 3 (EXECUTE) — resume the drain loop |
    | `verifying` | Enter Phase 4 (VERIFY) |
    | `iterating` | Enter Phase 5 (ITERATE) |
    | All stages `complete` | Enter Phase 7 (PR) |
 
-   **State file override:** If the state file's `returnTo` is `"verify"` but the roadmap shows `executing`, trust the state file — QTM has already drained and the orchestrator should proceed to VERIFY.
+   **State file override:** If the state file's `returnTo` is `"verify"` but the roadmap shows `executing`, trust the state file — the drain loop has already completed and the orchestrator should proceed to VERIFY.
 
 7. **Enter the lifecycle loop.** Execute the determined phase and continue the normal phase flow (EXECUTE → VERIFY → ITERATE/ADVANCE → next stage → PR → COMPLETION). Each phase transition follows the standard epic flow.
 

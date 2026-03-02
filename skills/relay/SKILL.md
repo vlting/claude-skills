@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 2.1.0
+  version: 2.2.0
 ---
 
 # Relay
@@ -228,13 +228,13 @@ setTimeout(() => s.destroy(), 500);
 
 ### Wait for an event (blocking)
 
-Used by QTM workers in RFX mode. Blocks until a matching event arrives or timeout.
+Used by drain loop workers while waiting for new tasks. Blocks until a matching event arrives or timeout.
 
 ```bash
 node -e "
 const s = require('net').connect(process.argv[1]);
 const events = new Set(process.argv.slice(3));
-const timeout = setTimeout(() => { console.log('RFX_TIMEOUT'); s.destroy(); }, +process.argv[2]);
+const timeout = setTimeout(() => { console.log('IDLE_TIMEOUT'); s.destroy(); }, +process.argv[2]);
 s.write(JSON.stringify({type:'identify',role:'worker',pid:process.env.PPID||0})+'\n');
 s.on('data', d => {
   for (const line of d.toString().split('\n').filter(Boolean)) {
@@ -251,7 +251,7 @@ s.on('data', d => {
 " "$RELAY_SOCK" "600000" "work-queued" "epic-done" "worker-disconnected"
 ```
 
-The output is the event name that triggered the wake-up, or `RFX_TIMEOUT` if the timeout expires. The caller inspects this to decide what to do next.
+The output is the event name that triggered the wake-up, or `IDLE_TIMEOUT` if the timeout expires. The caller inspects this to decide what to do next.
 
 ---
 
@@ -259,16 +259,16 @@ The output is the event name that triggered the wake-up, or `RFX_TIMEOUT` if the
 
 ### Q (execution engine)
 
-Q starts relay at QTM startup if it is not already running, and calls `/relay stop` on QTM exit. The smart stop is a no-op if other agents are still connected — only the last agent out actually stops relay.
+Q starts relay at drain loop startup if it is not already running, and calls `/relay stop` on drain loop exit. The smart stop is a no-op if other agents are still connected — only the last agent out actually stops relay.
 
 | Q behavior | With relay | Without relay (fallback) |
 |-----------|-----------|------------------------|
-| QTM startup | Start relay if not running (idempotent) | N/A — relay is always started |
-| RFX idle wait | Block on socket event — instant wake-up | Poll every 15s for 10 minutes |
+| Drain loop startup | Start relay if not running (idempotent) | N/A — relay is always started |
+| Idle waiting | Block on socket event — instant wake-up | Poll every 15s for 10 minutes |
 | Task claimed | Send `task-claimed` event | Write LAT + PID to file (still done regardless) |
 | Task completed | Send `task-completed` event | Archive to `_completed/` (still done regardless) |
 | Orphan detection | Instant via `worker-disconnected` event | 5-minute stale LAT threshold |
-| QTM exit | Call `/relay stop` (smart — no-op if others connected) | N/A |
+| Drain loop exit | Call `/relay stop` (smart — no-op if others connected) | N/A |
 
 **Important:** File-based heartbeats (LAT + PID in task files) are ALWAYS written, regardless of relay. Relay accelerates detection but the file data is the durable fallback.
 
@@ -298,8 +298,8 @@ T2: /q              → ensures relay (already running, no-op) → worker → dr
 T3: /q              → ensures relay (already running, no-op) → worker → drains tasks
 ...epic completes...
 T1: /epic COMPLETION → sends epic-done → /relay stop → 2 clients connected → refused
-T2: /q receives epic-done → exits QTM → /relay stop → 1 client connected → refused
-T3: /q receives epic-done → exits QTM → /relay stop → 0 clients → relay stopped ✓
+T2: /q receives epic-done → exits drain loop → /relay stop → 1 client connected → refused
+T3: /q receives epic-done → exits drain loop → /relay stop → 0 clients → relay stopped ✓
 ```
 
 ---

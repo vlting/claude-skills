@@ -4,7 +4,7 @@ description: "Define, scope, and orchestrate large initiatives from idea to ship
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 2.0.0
+  version: 2.1.0
 ---
 
 # Saga
@@ -46,7 +46,7 @@ saga (definition + orchestration)     epic (execution engine)        q (task eng
 │ DOCUMENT (write PRD)         │     │                        │     │              │
 │ DECOMPOSE (plan epics)       │     │                        │     │              │
 │ EXECUTE ─────────────────────────▶ │ PLAN + BREAKDOWN       │     │              │
-│   (becomes epic orchestrator)│     │ EXECUTE ───────────────────▶ │ QTM drain    │
+│   (becomes epic orchestrator)│     │ EXECUTE ───────────────────▶ │ drain loop   │
 │                              │     │ VERIFY → ITERATE       │     │              │
 │ REVIEW (between epics) ◀─────────  │ ADVANCE → PR           │     │              │
 │ ADVANCE → next epic ─────────────▶ │ next epic...           │     │              │
@@ -610,7 +610,7 @@ This phase runs when `/saga` (bare) is invoked.
 Between epics, keep workers alive. Do NOT send `epic-done` after each individual epic (that would kill the workers). Instead:
 
 - After each epic's PR phase completes, send `work-queued` via relay to signal "more work is coming."
-- Workers stay in RFX mode between epics, ready to wake when the next epic's BREAKDOWN queues segments.
+- Workers stay idle between epics, ready to wake when the next epic's BREAKDOWN queues segments.
 - Only send `epic-done` after the **last** epic in the saga completes. This is the signal for workers to exit.
 
 ---

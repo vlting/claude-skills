@@ -4,7 +4,7 @@ description: "Queue a task or drain the task queue."
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 11.2.0
+  version: 11.3.0
 ---
 
 # Q Command
@@ -65,7 +65,7 @@ This directive is used by the `epic` skill to route segment work to a feature br
 
 ## Orchestrator State File
 
-When the orchestrating agent (running `/saga` or `/epic`) enters QTM to drain tasks, it writes a **state file** that persists across `/clear` boundaries. This enables QTM to know it's running in orchestrator mode and allows the agent to resume the correct skill phase after QTM exits.
+When the orchestrating agent (running `/saga` or `/epic`) enters the drain loop, it writes a **state file** that persists across `/clear` boundaries. This enables the drain loop to detect orchestrator mode and allows the agent to resume the correct skill phase after the drain loop exits.
 
 ### Location
 
@@ -95,26 +95,26 @@ When the orchestrating agent (running `/saga` or `/epic`) enters QTM to drain ta
 | `role` | Always `"orchestrator"` |
 | `pid` | The orchestrating agent's PID — used to verify ownership |
 | `saga` | Present only when a saga is driving execution. Contains saga roadmap path and current epic number. |
-| `epic` | Always present during orchestrated QTM. Contains epic roadmap path, current stage number, stage branch name, and which phase to return to after QTM exits. |
+| `epic` | Always present during orchestrated queue draining. Contains epic roadmap path, current stage number, stage branch name, and which phase to return to after the drain loop exits. |
 
 ### Lifecycle
 
-1. **Written by** `/epic` (Phase 3: EXECUTE) or `/saga` (Phase 5: EXECUTE) **before** entering QTM.
-2. **Read by** QTM at startup to detect orchestrator mode.
-3. **Read by** the agent after QTM exits (or after `/clear`) to determine the next phase.
+1. **Written by** `/epic` (Phase 3: EXECUTE) or `/saga` (Phase 5: EXECUTE) **before** entering the drain loop.
+2. **Read by** the drain loop at startup to detect orchestrator mode.
+3. **Read by** the agent after the drain loop exits (or after `/clear`) to determine the next phase.
 4. **Updated by** `/epic` or `/saga` when transitioning between stages or epics.
 5. **Deleted by** `/epic` (Phase 8: COMPLETION) or `/saga` (Phase 7: COMPLETE) when the orchestration is finished.
 
-### QTM Behavior When State File Exists
+### Drain Loop Behavior When State File Exists
 
-When QTM starts and finds `.orchestrator-state.json` with a `pid` matching the current agent's PID (`$PPID`):
+When the drain loop starts and finds `.orchestrator-state.json` with a `pid` matching the current agent's PID (`$PPID`):
 
 - **Orchestrator mode activates.** The agent participates as a worker (claims and executes tasks) but follows different exit behavior.
 - **No `/clear` between tasks.** The orchestrator skips the Context Clearing Between Tasks procedure to preserve the return-path context. If context grows too large, it may `/clear` but MUST re-read the state file immediately after.
-- **No RFX mode.** When the queue is drained (no claimable tasks remain), the orchestrator **exits QTM** instead of entering RFX. This returns control to the calling skill (`/epic` or `/saga`).
+- **No idle waiting.** When the queue is drained (no claimable tasks remain), the orchestrator **exits the drain loop** instead of waiting for new tasks. This returns control to the calling skill (`/epic` or `/saga`).
 - **Orphan recovery still runs.** Before exiting, the orchestrator still checks for orphaned tasks and reclaims them if found.
 
-The "drain and return" behavior is the key difference: workers enter RFX to wait for more work; the orchestrator exits QTM so the epic/saga lifecycle can advance to the next phase (VERIFY, ITERATE, ADVANCE, etc.).
+The "drain and return" behavior is the key difference: workers start waiting for new tasks; the orchestrator exits the drain loop so the epic/saga lifecycle can advance to the next phase (VERIFY, ITERATE, ADVANCE, etc.).
 
 ### Post-Clear Recovery
 
@@ -128,13 +128,13 @@ If `/clear` runs for any reason while orchestrator state exists, the first actio
 
 ## Relay Integration
 
-Q integrates with the `relay` skill for real-time inter-agent coordination. At QTM startup, Q ensures relay is running — starting it if needed. On QTM exit, Q calls `/relay stop` (smart stop — only succeeds if no other agents are connected). This "last one out turns off the lights" pattern means relay is always available during work and automatically cleaned up when all agents are done.
+Q integrates with the `relay` skill for real-time inter-agent coordination. At drain loop startup, Q ensures relay is running — starting it if needed. On drain loop exit, Q calls `/relay stop` (smart stop — only succeeds if no other agents are connected). This "last one out turns off the lights" pattern means relay is always available during work and automatically cleaned up when all agents are done.
 
 If relay fails to start (e.g., skill not installed, Node.js unavailable), Q falls back to file-based polling and heartbeat detection — the same behavior as before relay existed.
 
-### Starting relay at QTM startup
+### Starting relay at drain loop startup
 
-At QTM startup (before the first scan), ensure relay is running:
+At drain loop startup (before the first scan), ensure relay is running:
 
 1. **Check if relay is already running:**
    ```bash
@@ -158,9 +158,9 @@ At QTM startup (before the first scan), ensure relay is running:
    " "$RELAY_SOCK" "$PPID"
    ```
 
-### Stopping relay at QTM exit
+### Stopping relay at drain loop exit
 
-When QTM exits (queue drained, `epic-done` received, or user termination), attempt to stop relay using the **smart stop protocol below**. Never bypass this by manually killing the relay PID — doing so kills relay for ALL agents across all terminals.
+When the drain loop exits (queue drained, `epic-done` received, or user termination), attempt to stop relay using the **smart stop protocol below**. Never bypass this by manually killing the relay PID — doing so kills relay for ALL agents across all terminals.
 
 **Smart stop procedure (inline — do NOT shortcut this):**
 
@@ -199,13 +199,13 @@ else
 fi
 ```
 
-This is called at every QTM exit path — the smart stop makes it safe to call unconditionally.
+This is called at every drain loop exit path — the smart stop makes it safe to call unconditionally.
 
 > **CRITICAL: Never `kill` the relay PID directly.** The relay server is shared across all agents in all terminals. Always use the smart stop above, which checks for connected clients first. The relay server also has a defense-in-depth SIGTERM guard that refuses to die if identified clients are connected, but agents must not rely on this — always use the smart stop protocol.
 
 ### Event emission
 
-When relay is running, QTM sends events at key lifecycle points:
+When relay is running, the drain loop sends events at key lifecycle points:
 
 | Lifecycle point | Event sent |
 |----------------|------------|
@@ -216,9 +216,9 @@ These events are **in addition to** the file-based heartbeat (LAT + PID), which 
 
 ### Relay-accelerated orphan detection
 
-When the relay broadcasts a `worker-disconnected` event (an agent's socket closed), the event includes the dead agent's PID and its claimed tasks. Any QTM agent receiving this event can immediately check if the listed tasks have `-active.md` files and reclaim them — no need to wait for the 5-minute LAT stale threshold.
+When the relay broadcasts a `worker-disconnected` event (an agent's socket closed), the event includes the dead agent's PID and its claimed tasks. Any agent in the drain loop receiving this event can immediately check if the listed tasks have `-active.md` files and reclaim them — no need to wait for the 5-minute LAT stale threshold.
 
-This is handled in the **Orphan Recovery Protocol** and **RFX mode** sections below.
+This is handled in the **Orphan Recovery Protocol** and **Idle Waiting for New Tasks** sections below.
 
 ---
 
@@ -279,7 +279,7 @@ The LAT does NOT need to be updated on a fixed timer — Claude Code agents don'
 
 ## Parallel Safety
 
-When multiple agents run QTM simultaneously (or when segments may be worked in parallel), merge conflicts are the primary risk. The following principles govern all parallel work:
+When multiple agents drain the queue simultaneously (or when segments may be worked in parallel), merge conflicts are the primary risk. The following principles govern all parallel work:
 
 ### File-Disjoint Ownership
 
@@ -312,23 +312,23 @@ When multiple tasks are active in parallel, they merge in the order they finish 
 q
 ```
 
-### QTM Startup Checklist
+### Drain Loop Startup Checklist
 
 > **MANDATORY — complete ALL steps in order, even if the queue appears empty. Do NOT skip steps or short-circuit.**
 
-1. **Check for orchestrator state file** — read `QUEUE_DIR/.orchestrator-state.json`. If it exists and `pid` matches `$PPID`, activate **orchestrator mode** (drain-and-return, no RFX, no `/clear` between tasks). Otherwise, run as a normal worker.
+1. **Check for orchestrator state file** — read `QUEUE_DIR/.orchestrator-state.json`. If it exists and `pid` matches `$PPID`, activate **orchestrator mode** (drain-and-return, no idle waiting, no `/clear` between tasks). Otherwise, run as a normal worker.
 2. Ensure relay is running (start if needed — see **Relay Integration**)
 3. Connect to relay as worker (`identify` with PID)
 4. Scan queue for claimable tasks → execute each one
 5. Run Orphan Recovery Protocol
-6. **If orchestrator mode:** Exit QTM (return control to calling skill). **If worker mode:** Enter RFX mode if no work found.
+6. **If orchestrator mode:** Exit the drain loop (return control to calling skill). **If worker mode:** Start waiting for new tasks if no work found.
 7. `/relay stop` on every exit path (workers only — orchestrator skips this since the calling skill manages relay)
 
 ### Definition
 
-If the repo root contains a `QUEUE_DIR` folder, this enters **queued task mode (QTM)** — a drain loop that executes all available tasks in the queue, then exits.
+If the repo root contains a `QUEUE_DIR` folder, this enters **the drain loop** — scanning and executing all available tasks in the queue, then exiting.
 
-QTM scans for the `next available queued task` (defined as "the lowest-numbered `.md` file directly in `QUEUE_DIR` that does not end in `-active.md` or `-wip.md`, and whose `depends-on` dependencies are all resolved"). For each task found:
+The drain loop scans for the `next available queued task` (defined as "the lowest-numbered `.md` file directly in `QUEUE_DIR` that does not end in `-active.md` or `-wip.md`, and whose `depends-on` dependencies are all resolved"). For each task found:
 
 > **CRITICAL — No resuming active tasks during normal scanning.** When scanning for the next task, **always skip `-active.md` files**. If a file is already named `XXX-active.md` when you scan, it is owned by another agent — even if you believe you renamed it yourself in an earlier turn of this conversation. Ownership is non-resumable: each `/q` entry is a fresh scan. Only plain `XXX.md` files (not `-active`, not `-wip`) are candidates for claiming. (The sole exception is the **Orphan Recovery Protocol**, which runs at drain-exit time and can take over an `-active.md` file after confirming the owning agent is dead.)
 
@@ -343,7 +343,7 @@ QTM scans for the `next available queued task` (defined as "the lowest-numbered 
 6. **When no more tasks can be claimed** (queue empty, or all remaining are `-active.md`, `-wip.md`, or dependency-blocked), run the **Orphan Recovery Protocol** (see below). If orphan recovery reclaims any tasks, continue the drain loop (go back to step 1).
 7. **If no orphans were found**, the exit behavior depends on the agent's mode:
 
-   **Orchestrator mode** (state file exists with matching PID): **Exit QTM immediately.** Print a status and return control to the calling skill (`/epic` or `/saga`). The orchestrator does NOT enter RFX — it has a lifecycle to continue (VERIFY, ITERATE, ADVANCE, etc.).
+   **Orchestrator mode** (state file exists with matching PID): **Exit the drain loop immediately.** Print a status and return control to the calling skill (`/epic` or `/saga`). The orchestrator does NOT start waiting for new tasks — it has a lifecycle to continue (VERIFY, ITERATE, ADVANCE, etc.).
 
    ```
    --- Queue drained (orchestrator returning to lifecycle) ---
@@ -351,7 +351,7 @@ QTM scans for the `next available queued task` (defined as "the lowest-numbered 
    ---
    ```
 
-   **Worker mode** (no state file or PID mismatch): Enter **Ready for Execution (RFX) mode** (see below). RFX keeps the agent alive indefinitely, waiting for new actionable files. If a file appears, exit RFX and go back to step 1 to claim and execute it.
+   **Worker mode** (no state file or PID mismatch): **Start waiting for new tasks** (see below). The agent stays alive indefinitely, waiting for new actionable files. If a file appears, stop waiting and go back to step 1 to claim and execute it.
 
    On exit, print a final status:
    ```
@@ -364,7 +364,7 @@ QTM scans for the `next available queued task` (defined as "the lowest-numbered 
    --- Queue empty ---
    ```
 
-8. **Stop relay on exit (workers only).** After printing the final status (or at any other QTM exit point — `epic-done` received, user termination), **worker-mode agents** call `/relay stop`. The smart stop is safe to call unconditionally: it refuses if other agents are still connected, and succeeds only if this agent is the last one out. **Orchestrator-mode agents skip this step** — the calling skill (`/epic` or `/saga`) manages relay lifecycle.
+8. **Stop relay on exit (workers only).** After printing the final status (or at any other drain loop exit point — `epic-done` received, user termination), **worker-mode agents** call `/relay stop`. The smart stop is safe to call unconditionally: it refuses if other agents are still connected, and succeeds only if this agent is the last one out. **Orchestrator-mode agents skip this step** — the calling skill (`/epic` or `/saga`) manages relay lifecycle.
 
 > **For parallel execution**, run `/q` in multiple terminal windows — the atomic rename mechanism ensures each task is claimed by exactly one agent.
 
@@ -376,7 +376,7 @@ QTM scans for the `next available queued task` (defined as "the lowest-numbered 
 - **No other agent may merge that worktree**, archive that queue file, or perform any cleanup on behalf of another agent's task.
 - An agent working on task `XXX` must perform the **entire lifecycle itself**: claim → implement → merge → archive → cleanup. It must never delegate the merge or archive steps to a parent or sibling agent.
 - If an agent spawns sub-agents for implementation work, those sub-agents must only perform implementation (code + commits). The **claiming agent** retains sole responsibility for merging, archiving the queue file, and removing the worktree.
-- An agent in QTM **must not** pre-claim multiple tasks. It claims one task, completes it end-to-end (including cleanup), then claims the next.
+- An agent in the drain loop **must not** pre-claim multiple tasks. It claims one task, completes it end-to-end (including cleanup), then claims the next.
 
 > **Exception — Orphan Recovery:** When an agent determines that an `-active.md` task is orphaned (via the Orphan Recovery Protocol), it may take over ownership directly — without renaming the file back to pending first. This avoids an unnecessary race window. See **Orphan Recovery Protocol** below.
 
@@ -398,15 +398,15 @@ After completing a task (step 4 — archiving to `_completed`) and before starti
 
 2. **Clear the conversation context** by running the `/clear` command. This is a built-in Claude Code CLI command — do NOT invoke it via the Skill tool. Simply output `/clear` as a message to reset the conversation. This drops all accumulated tool results, file contents, and intermediate reasoning from the completed task.
 
-3. **After clearing**, resume QTM by checking for the next available task (step 5) with a fresh context window. Re-read any necessary skill files or project context as needed since prior context has been dropped.
+3. **After clearing**, resume the drain loop by checking for the next available task (step 5) with a fresh context window. Re-read any necessary skill files or project context as needed since prior context has been dropped.
 
 **Orchestrator mode:** The agent **skips `/clear`** between tasks. The orchestrator needs to preserve its return-path context (which phase to resume, which epic/saga is active). Instead, it prints the task summary (step 1 above) and proceeds directly to scanning for the next task. If context grows excessively large, the orchestrator MAY `/clear` but MUST immediately re-read the orchestrator state file (`QUEUE_DIR/.orchestrator-state.json`) to recover its return path.
 
-**Note:** This procedure only applies to the QTM sequential flow (between tasks). It does NOT apply to standalone task execution.
+**Note:** This procedure only applies to the sequential drain flow (between tasks). It does NOT apply to standalone task execution.
 
 ### Orphan Recovery Protocol
 
-When the QTM drain loop reaches step 6 (no more claimable tasks), the agent MUST check for orphaned `-active.md` files before exiting. A task is orphaned when its owning agent has died — leaving the file in `-active` state with no one working on it.
+When the drain loop reaches step 6 (no more claimable tasks), the agent MUST check for orphaned `-active.md` files before exiting. A task is orphaned when its owning agent has died — leaving the file in `-active` state with no one working on it.
 
 **Detection procedure:**
 
@@ -457,7 +457,7 @@ The discovering agent takes over the orphaned task **directly** — it does NOT 
 
 **Edge cases:**
 
-- **Multiple orphaned tasks:** Process them one at a time, lowest-numbered first (consistent with normal QTM ordering). Complete one fully before taking over the next.
+- **Multiple orphaned tasks:** Process them one at a time, lowest-numbered first (consistent with normal drain loop ordering). Complete one fully before taking over the next.
 - **Orphaned task with unresolvable state** (e.g., worktree exists but has merge conflicts from a half-finished rebase): Clean up the worktree (`git rebase --abort` or remove and recreate), then restart the task from the last unchecked checklist item.
 - **No Task Progress section and no mtime signal:** If you truly cannot determine whether the task is orphaned (no heartbeat data, mtime is recent, can't check PID), skip it and let a human investigate. Print a warning:
   ```
@@ -466,21 +466,21 @@ The discovering agent takes over the orphaned task **directly** — it does NOT 
   ---
   ```
 
-### Ready for Execution (RFX) Mode
+### Idle Waiting for New Tasks
 
-RFX keeps **worker-mode** agents alive **indefinitely** while waiting for new work. Without RFX, the drain agent would exit immediately on an empty queue, requiring the user to manually re-run `/q`. The agent stays in RFX until work arrives or it receives an `epic-done` signal — there is no idle timeout.
+Idle waiting keeps **worker-mode** agents alive **indefinitely** while waiting for new work. Without it, the drain agent would exit immediately on an empty queue, requiring the user to manually re-run `/q`. The agent stays in idle waiting until work arrives or it receives an `epic-done` signal — there is no idle timeout.
 
-**When RFX activates:** Step 7 of the drain loop — after the normal scan finds nothing claimable AND orphan recovery finds nothing to reclaim. **Only worker-mode agents enter RFX.** Orchestrator-mode agents exit QTM instead (see step 7 above).
+**When idle waiting activates:** Step 7 of the drain loop — after the normal scan finds nothing claimable AND orphan recovery finds nothing to reclaim. **Only worker-mode agents start idle waiting.** Orchestrator-mode agents exit the drain loop instead (see step 7 above).
 
 **Behavior depends on whether relay is running:**
 
-#### RFX with relay (preferred)
+#### Idle waiting with relay (preferred)
 
-When `RELAY_RUNNING=true`, RFX uses the relay socket for instant event-driven wake-up instead of polling:
+When `RELAY_RUNNING=true`, idle waiting uses the relay socket for instant event-driven wake-up instead of polling:
 
 1. Print a status message:
    ```
-   --- Entering RFX mode (relay-connected, waiting indefinitely for events) ---
+   --- Waiting for new tasks (relay-connected, waiting indefinitely for events) ---
    ```
 2. **Wait for a relay event** using a single blocking bash command:
    ```bash
@@ -488,7 +488,7 @@ When `RELAY_RUNNING=true`, RFX uses the relay socket for instant event-driven wa
    const s = require('net').connect(process.argv[1]);
    const events = new Set(['work-queued','epic-done','worker-disconnected']);
    s.write(JSON.stringify({type:'identify',role:'worker',pid:+(process.env.PPID||0)})+'\n');
-   const cycle = setTimeout(() => { console.log('RFX_CYCLE'); s.destroy(); }, 9*60*1000);
+   const cycle = setTimeout(() => { console.log('IDLE_CYCLE'); s.destroy(); }, 9*60*1000);
    s.on('data', d => {
      for (const line of d.toString().split('\n').filter(Boolean)) {
        try {
@@ -501,25 +501,25 @@ When `RELAY_RUNNING=true`, RFX uses the relay socket for instant event-driven wa
        } catch {}
      }
    });
-   s.on('error', () => { clearTimeout(cycle); console.log('RFX_RECONNECT'); s.destroy(); });
+   s.on('error', () => { clearTimeout(cycle); console.log('IDLE_RECONNECT'); s.destroy(); });
    " "$RELAY_SOCK")
    ```
    This runs as a **single tool call** with `timeout: 600000` (10 minutes). The script self-cycles before this limit is reached, so the Bash timeout should never fire — but setting it to the max provides a safety net.
 3. **Interpret the result:**
    - **`work-queued`**: Return to the drain loop (step 1) to claim and execute the new task.
    - **`worker-disconnected`**: The event includes the dead agent's PID and tasks. Run the orphan recovery protocol (step 6) to check if any of those tasks can be reclaimed. Then return to step 1.
-   - **`epic-done`**: Exit QTM gracefully with the standard final status message.
-   - **`RFX_RECONNECT`** (socket error): Run an orphan scan. If orphans are found, reclaim them and return to step 1. Otherwise, **re-enter RFX** (go back to step 2) — do NOT exit QTM.
-   - **`RFX_CYCLE`** (internal timeout — keeps RFX alive across Bash tool timeout boundaries): **Re-enter RFX** (go back to step 2). This is normal housekeeping, not an error.
-   - **Empty output or unexpected result** (Bash timeout fired, process killed, sleep/wake disruption): Treat identically to `RFX_CYCLE` — re-enter RFX. Log a brief note: `--- RFX cycle (recovered from stale connection) ---`
+   - **`epic-done`**: Exit the drain loop gracefully with the standard final status message.
+   - **`IDLE_RECONNECT`** (socket error): Run an orphan scan. If orphans are found, reclaim them and return to step 1. Otherwise, **resume waiting** (go back to step 2) — do NOT exit the drain loop.
+   - **`IDLE_CYCLE`** (internal timeout — keeps idle waiting alive across Bash tool timeout boundaries): **Resume waiting** (go back to step 2). This is normal housekeeping, not an error.
+   - **Empty output or unexpected result** (Bash timeout fired, process killed, sleep/wake disruption): Treat identically to `IDLE_CYCLE` — resume waiting. Log a brief note: `--- Idle cycle (recovered from stale connection) ---`
 
-#### RFX without relay (fallback)
+#### Idle waiting without relay (fallback)
 
-When relay is not running, RFX falls back to filesystem polling:
+When relay is not running, idle waiting falls back to filesystem polling:
 
 1. Print a status message:
    ```
-   --- Entering RFX mode (polling indefinitely for new tasks) ---
+   --- Waiting for new tasks (polling indefinitely) ---
    ```
 2. **Poll the queue** using a single bash command that checks every 15 seconds:
    ```bash
@@ -534,7 +534,7 @@ When relay is not running, RFX falls back to filesystem polling:
      fi
      NOW=$(date +%s)
      if [ $((NOW - START)) -ge 540 ]; then
-       echo "RFX_CYCLE"
+       echo "IDLE_CYCLE"
        exit 0
      fi
      sleep 15
@@ -542,16 +542,16 @@ When relay is not running, RFX falls back to filesystem polling:
    ```
    This runs as a **single tool call** with `timeout: 600000` (10 minutes). The script self-cycles after ~9 minutes, before the Bash timeout fires — but setting it to the max provides a safety net.
 3. **Interpret the result:**
-   - **`ACTIONABLE: ...`** (actionable files found): Exit RFX and return to the drain loop (step 1) to claim and execute the task normally.
-   - **`RFX_CYCLE`** (internal timeout — keeps RFX alive across Bash tool timeout boundaries): **Re-enter RFX** (go back to step 2). This is normal housekeeping, not an error.
-   - **Empty output or unexpected result** (Bash timeout fired, process killed, sleep/wake disruption): Treat identically to `RFX_CYCLE` — re-enter RFX. Log a brief note: `--- RFX cycle (recovered from stale connection) ---`
+   - **`ACTIONABLE: ...`** (actionable files found): Stop waiting and return to the drain loop (step 1) to claim and execute the task normally.
+   - **`IDLE_CYCLE`** (internal timeout — keeps idle waiting alive across Bash tool timeout boundaries): **Resume waiting** (go back to step 2). This is normal housekeeping, not an error.
+   - **Empty output or unexpected result** (Bash timeout fired, process killed, sleep/wake disruption): Treat identically to `IDLE_CYCLE` — resume waiting. Log a brief note: `--- Idle cycle (recovered from stale connection) ---`
 
-#### Common RFX behavior
+#### Common idle waiting behavior
 
-**RFX runs indefinitely.** The agent stays in RFX until work arrives, an `epic-done` signal is received, or the user manually terminates the agent (e.g., Ctrl+C). There is no idle timeout — the agent is always ready to pick up new work the moment it's queued.
+**Idle waiting runs indefinitely.** The agent stays in idle waiting until work arrives, an `epic-done` signal is received, or the user manually terminates the agent (e.g., Ctrl+C). There is no idle timeout — the agent is always ready to pick up new work the moment it's queued.
 
-**RFX does NOT activate when:**
-- The agent is in **orchestrator mode** (state file exists with matching PID) — the orchestrator exits QTM to return to the calling skill's lifecycle.
+**Idle waiting does NOT activate when:**
+- The agent is in **orchestrator mode** (state file exists with matching PID) — the orchestrator exits the drain loop to return to the calling skill's lifecycle.
 - The agent was invoked with `q {description}` (enqueue mode) — that flow creates files and exits, it never drains.
 
 ---
@@ -577,7 +577,7 @@ Flags can appear anywhere in the arguments and will be stripped before treating 
 
 ### Disambiguation
 
-- `q` alone (no further text) → enter QTM (drain queue)
+- `q` alone (no further text) → drain the queue
 - `q --no-segment ...` or `q --no-auto ...` → enqueue mode (flags are unambiguous)
 - `q {any other text}` → enqueue mode (the text is the task description)
 
@@ -617,7 +617,7 @@ When segment mode is active, the agent must **analyze the task description** and
   - Is always the **highest-numbered** segment so it runs last.
   - Owns the shared file(s) exclusively — no other segment touches them.
   - Includes `<!-- depends-on: 001, 002, ... -->` on its second line (after `<!-- auto-queue -->` if present) listing the segment numbers it depends on.
-  - An agent in QTM MUST NOT claim a segment with `depends-on` until all listed task numbers have no file remaining in `QUEUE_DIR` (i.e., fully archived to `_completed/`). This includes `-wip.md`, plain `.md`, and `-active.md` files — any file with that number blocks the dependency.
+  - An agent in the drain loop MUST NOT claim a segment with `depends-on` until all listed task numbers have no file remaining in `QUEUE_DIR` (i.e., fully archived to `_completed/`). This includes `-wip.md`, plain `.md`, and `-active.md` files — any file with that number blocks the dependency.
 - Each segment's instructions must be self-contained — a future agent should not need context from other segments (except for the integration segment, which may reference what earlier segments produced).
 - Name each segment file with a clear title in the markdown heading.
 - **Splitting heuristic — prefer splitting by module/directory:** A segment that owns `src/components/Button/**` will never conflict with one that owns `src/components/Select/**`. Split along directory boundaries when possible. Only share files like top-level barrel exports, route configs, or example pages — and route those to the integration segment.
@@ -687,7 +687,7 @@ For whatever `{Task description}` is passed, do the following:
 
 ## Internal: Task Execution in Worker Tree
 
-> **This is an internal procedure used by QTM to execute claimed tasks. It is not a user-facing command.**
+> **This is an internal procedure used by the drain loop to execute claimed tasks. It is not a user-facing command.**
 
 ### Definition
 
