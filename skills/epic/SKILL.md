@@ -142,6 +142,8 @@ gh issue edit $ISSUE_NUMBER --repo OWNER/REPO --body "$UPDATED"
 
 **All project board operations are best-effort.** If any `gh project` command fails (auth scope, network, project not found), log the error and continue. The epic workflow must never block on a board update.
 
+**Epic and saga issues use a two-state board lifecycle: Planning → Done.** Only stage sub-issues move through intermediate columns (Todo → In Progress → In Review → Done). The epic issue itself MUST stay in "Planning" from creation until COMPLETION moves it to "Done". Never move an epic or saga issue to "In Progress", "In Review", or "Todo".
+
 **Stored in the roadmap metadata** (added during Phase 1):
 
 ```markdown
@@ -492,6 +494,8 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
      --single-select-option-id "$IN_PROGRESS_OPTION_ID"
    ```
    Read the stage's board item ID from the roadmap metadata. Skip if project board is not configured.
+
+   > **IMPORTANT: Only stage sub-issues move to "In Progress".** Do NOT move the epic issue itself — it stays in "Planning" until COMPLETION moves it to "Done".
 
 2. **Write the orchestrator state file** before entering QTM. This tells QTM to run in orchestrator mode (drain-and-return, no RFX, no `/clear` between tasks):
    ```bash

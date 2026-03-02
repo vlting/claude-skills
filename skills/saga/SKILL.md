@@ -388,6 +388,8 @@ If no notification channel is configured, fall back to `osascript` (desktop). If
 
    If any step fails (missing scope, project not found), log the error and continue without board tracking.
 
+   > **Saga and epic issues use a two-state board lifecycle: Planning → Done.** The saga issue stays in "Planning" from creation until Phase 7 (COMPLETE) moves it to "Done". Never move a saga or epic issue to "In Progress", "In Review", or "Todo". Only stage sub-issues move through intermediate columns.
+
 6. **Commit the saga roadmap to `main`:**
    ```bash
    git checkout main
@@ -492,7 +494,7 @@ This phase runs when `/saga` (bare) is invoked.
    git push origin main
    ```
 
-7. **Update the saga roadmap:** Set this epic's status to `in-progress`. Record the epic roadmap path once created. (The roadmap file was already staged and committed in step 6.)
+7. **Update the saga roadmap:** Set this epic's status to `in-progress`. Record the epic roadmap path once created. (The roadmap file was already staged and committed in step 6.) **Note:** This is a roadmap file status only — do NOT move the epic's GitHub issue on the project board. Epic issues stay in "Planning" until COMPLETION moves them to "Done".
 
 8. **Invoke epic PLAN.** Execute the epic skill's Phase 1 (PLAN) for this epic. The epic goal description should reference both the PRD and the tech spec:
 
