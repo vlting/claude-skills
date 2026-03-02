@@ -148,7 +148,7 @@ gh issue edit $ISSUE_NUMBER --repo OWNER/REPO --body "$UPDATED"
 - **Project Node ID:** PVT_xxxxx
 - **Project Item ID:** PVTI_xxxxx          ← epic issue's board item
 - **Status Field ID:** PVTSSF_xxxxx
-- **Status Options:** Todo=xxx, In Progress=xxx, In Review=xxx, Done=xxx
+- **Status Options:** Planning=xxx, Todo=xxx, In Progress=xxx, In Review=xxx, Done=xxx
 ```
 
 Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7).
@@ -312,10 +312,26 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
    1. Get the project node ID
    2. Add the epic issue to the board and capture the item node ID
    3. Resolve the Status field ID and all option IDs
-   4. Add each stage sub-issue to the board and capture their item node IDs:
+   4. Set the epic issue's initial status to **"Planning"**:
+      ```bash
+      gh project item-edit \
+        --project-id "$PROJECT_NODE_ID" \
+        --id "$ITEM_NODE_ID" \
+        --field-id "$STATUS_FIELD_ID" \
+        --single-select-option-id "$PLANNING_OPTION_ID"
+      ```
+      The epic stays in "Planning" for its entire lifecycle until COMPLETION moves it to "Done".
+   5. Add each stage sub-issue to the board, capture their item node IDs, and set their initial status to **"Todo"**:
       ```bash
       # For each stage sub-issue
       SUB_ITEM_NODE_ID=$(gh project item-add $PROJECT_NUMBER --owner OWNER --url "$SUB_ISSUE_URL" --format json | jq -r '.id')
+
+      # Set initial status to "Todo"
+      gh project item-edit \
+        --project-id "$PROJECT_NODE_ID" \
+        --id "$SUB_ITEM_NODE_ID" \
+        --field-id "$STATUS_FIELD_ID" \
+        --single-select-option-id "$TODO_OPTION_ID"
       ```
 
    Store these in the roadmap file metadata (see format in Project Board Integration section). Each stage in the roadmap should include its board item node ID:
@@ -468,17 +484,7 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
 
 ### Procedure
 
-1. **Move the epic issue to "In Progress"** on the project board (if configured):
-   ```bash
-   gh project item-edit \
-     --project-id "$PROJECT_NODE_ID" \
-     --id "$ITEM_NODE_ID" \
-     --field-id "$STATUS_FIELD_ID" \
-     --single-select-option-id "$IN_PROGRESS_OPTION_ID"
-   ```
-   Read the IDs from the roadmap metadata. Skip if project board is not configured. Only do this on the **first** EXECUTE entry for this epic (not on re-entries from ITERATE).
-
-1.5. **Move the current stage's sub-issue to "In Progress"** on the project board (if configured):
+1. **Move the current stage's sub-issue to "In Progress"** on the project board (if configured):
    ```bash
    gh project item-edit \
      --project-id "$PROJECT_NODE_ID" \
@@ -717,17 +723,7 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
    gh pr ready $EPIC_PR_NUMBER
    ```
 
-5. **Move the epic issue to "In Review"** on the project board (if configured):
-   ```bash
-   gh project item-edit \
-     --project-id "$PROJECT_NODE_ID" \
-     --id "$ITEM_NODE_ID" \
-     --field-id "$STATUS_FIELD_ID" \
-     --single-select-option-id "$IN_REVIEW_OPTION_ID"
-   ```
-   Read the IDs from the roadmap metadata. Skip if project board is not configured.
-
-6. **Update the roadmap:** Set status to `in-review`.
+5. **Update the roadmap:** Set status to `in-review`.
 
 7. **Open the PR in the default browser** and inform the user:
    ```bash

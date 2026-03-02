@@ -360,6 +360,34 @@ If no notification channel is configured, fall back to `osascript` (desktop). If
 
    Update the saga roadmap with the issue number.
 
+5.5. **Add the saga issue to the project board** (if `project_number` is available in the PM configuration):
+
+   Follow the same **Project Board Integration** procedure used by epic (see epic's Architecture section) to:
+   1. Get the project node ID (if not already known)
+   2. Add the saga issue to the board and capture the item node ID:
+      ```bash
+      SAGA_ITEM_NODE_ID=$(gh project item-add $PROJECT_NUMBER --owner OWNER --url "$SAGA_ISSUE_URL" --format json | jq -r '.id')
+      ```
+   3. Resolve the Status field ID and option IDs (if not already known)
+   4. Set the saga issue's initial status to "Planning":
+      ```bash
+      gh project item-edit \
+        --project-id "$PROJECT_NODE_ID" \
+        --id "$SAGA_ITEM_NODE_ID" \
+        --field-id "$STATUS_FIELD_ID" \
+        --single-select-option-id "$PLANNING_OPTION_ID"
+      ```
+
+   Store the project board IDs in the saga roadmap metadata:
+   ```markdown
+   - **Project Node ID:** PVT_xxxxx
+   - **Project Item ID:** PVTI_xxxxx          ← saga issue's board item
+   - **Status Field ID:** PVTSSF_xxxxx
+   - **Status Options:** Planning=xxx, Todo=xxx, In Progress=xxx, Done=xxx
+   ```
+
+   If any step fails (missing scope, project not found), log the error and continue without board tracking.
+
 6. **Commit the saga roadmap to `main`:**
    ```bash
    git checkout main
