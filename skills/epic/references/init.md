@@ -126,6 +126,7 @@ jobs:
   cleanup:
     if: >-
       github.event.pull_request.merged == true && (
+        startsWith(github.event.pull_request.head.ref, 'epic/') ||
         startsWith(github.event.pull_request.head.ref, 'feat/') ||
         startsWith(github.event.pull_request.head.ref, 'fix/') ||
         startsWith(github.event.pull_request.head.ref, 'chore/') ||
@@ -144,7 +145,7 @@ jobs:
         id: slug
         run: |
           BRANCH="${{ github.event.pull_request.head.ref }}"
-          SLUG=$(echo "$BRANCH" | sed 's|^feat/||;s|^fix/||;s|^chore/||;s|^docs/||')
+          SLUG=$(echo "$BRANCH" | sed 's|^epic/||;s|^feat/||;s|^fix/||;s|^chore/||;s|^docs/||')
           echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
