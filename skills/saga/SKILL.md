@@ -11,6 +11,16 @@ metadata:
 
 Takes a high-level goal ("build a consulting dashboard") and guides it from idea through requirements, planning, and implementation across multiple epics. The DISCOVER and DEFINE phases are interactive (human-in-the-loop). EXECUTE and beyond are autonomous, delegating to the `epic` skill.
 
+## Prerequisites
+
+Required skills: **epic**, **q**, **relay**. Verify before executing:
+
+```bash
+for skill in epic q relay; do
+  [ -f ~/.claude/skills/$skill/SKILL.md ] || { echo "Missing skill '$skill'. Install at ~/.claude/skills/$skill/"; exit 1; }
+done
+```
+
 ---
 
 ## Invocation
@@ -18,6 +28,7 @@ Takes a high-level goal ("build a consulting dashboard") and guides it from idea
 ```
 /saga                        — Resume saga execution (orchestrator mode)
 /saga {goal description}     — Start a new saga
+saga init                    — First-time repo setup (delegates to epic init + creates saga dirs)
 saga configure               — (Re)configure PM integration, ownership mode, notifications
 saga update                  — Update an existing saga (PRD, epics, dependencies)
 saga status                  — Show current saga progress
@@ -27,6 +38,7 @@ saga abort                   — Abort the current saga (preserves all work)
 **Disambiguation:**
 - `/saga` alone (no further text) → resume execution of the active saga
 - `/saga {text}` → start new saga (interactive)
+- `saga init` → first-time repo setup (delegates to `epic init`, then creates saga dirs)
 - `saga configure` → reconfigure PM tool and ownership (delegates to `epic configure`, since config is shared)
 - `saga update` → update an existing saga interactively
 - `saga status` → show progress
@@ -318,12 +330,12 @@ If no notification channel is configured, fall back to `osascript` (desktop). If
 
 5. **Create the saga issue in the configured PM tool.**
 
-   Read the PM configuration from `.ai-epics/docs/project-setup.md` (see epic's `references/pm-integration.md`):
+   Read the PM configuration from `.ai-epics/docs/project-setup.md` (see epic's `references/pm-contract.md` → `pm/{tool}.md`):
    - **owner mode:** Create the saga issue using the configured PM tool.
    - **contributor mode:** Ask the user for the existing issue ID/URL. Skip issue creation.
    - **none:** Skip all PM operations.
 
-   The examples below show GitHub (owner mode). For other tools, consult epic's `references/pm-integration.md`.
+   The examples below show GitHub (owner mode). For other tools, consult epic's `references/pm-contract.md` → `pm/{tool}.md`.
 
    **Create the saga GitHub Issue (owner mode):**
 
@@ -708,6 +720,35 @@ Abort the current saga without destroying work:
 4. **Close the saga issue** (owner mode only) with a comment: "Saga aborted. All work preserved." In contributor mode, add a comment but do not close.
 5. **Notify the user.**
 6. **Inform the user** where to find preserved work (branches, PRDs, tech specs).
+
+---
+
+## `saga init`
+
+First-time repository setup for the full saga/epic workflow. Delegates to `epic init` for the core setup, then creates saga-specific directories.
+
+### Procedure
+
+1. **Check for existing setup.** If `.ai-epics/docs/project-setup.md` already exists:
+   - Ask: **"Project is already initialized. Create saga directories only, or re-run full epic init?"**
+   - **Saga dirs only:** Skip to step 3.
+   - **Full re-init:** Continue to step 2.
+
+2. **Run `epic init`.** Invoke the epic skill's init flow (read epic's `references/init.md` and follow its procedure). This handles: git remote detection, directory creation, feature flags, PM tool selection, labels, board setup, project-setup.md, and post-init steps.
+
+3. **Create saga directories:**
+   ```bash
+   mkdir -p .ai-sagas/docs
+   mkdir -p .ai-sagas/roadmaps
+   mkdir -p .ai-sagas/archive
+   ```
+
+4. **Print summary:**
+   ```
+   saga init complete.
+   Epic setup: .ai-epics/docs/project-setup.md
+   Saga dirs:  .ai-sagas/{docs,roadmaps,archive}
+   ```
 
 ---
 

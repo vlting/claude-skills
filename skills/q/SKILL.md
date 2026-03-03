@@ -11,6 +11,14 @@ metadata:
 
 Unified command for queued task workflows. Two forms depending on arguments.
 
+## Prerequisites
+
+Required skills: **relay**. Verify before executing:
+
+```bash
+[ -f ~/.claude/skills/relay/SKILL.md ] || { echo "Missing skill 'relay'. Install at ~/.claude/skills/relay/"; exit 1; }
+```
+
 ---
 
 ## Queue Folder

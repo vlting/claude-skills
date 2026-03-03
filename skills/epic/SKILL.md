@@ -11,6 +11,16 @@ metadata:
 
 Orchestrates large development goals through a multi-stage iterative workflow. Each stage is broken down, executed via Q, verified, and iterated until production-ready. Each stage produces a focused PR to the epic branch, and the final epic PR to main is already fully pre-reviewed.
 
+## Prerequisites
+
+Required skills: **q**, **relay**. Verify before executing:
+
+```bash
+for skill in q relay; do
+  [ -f ~/.claude/skills/$skill/SKILL.md ] || { echo "Missing skill '$skill'. Install at ~/.claude/skills/$skill/"; exit 1; }
+done
+```
+
 ---
 
 ## Invocation
@@ -28,8 +38,8 @@ epic abort                   — Abort the current epic (preserves branches and 
 **Disambiguation:**
 - `/epic` alone (no further text) → resume execution of the active epic
 - `/epic {text}` → start new epic
-- `epic init` → first-time setup (read `references/init.md` and follow its procedure)
-- `epic configure` → reconfigure PM tool and ownership (read `references/pm-integration.md`)
+- `epic init` → first-time setup including PM tool config (read `references/init.md` and follow its procedure)
+- `epic configure` → reconfigure PM tool and ownership (read `references/pm-contract.md` → `pm/{tool}.md`)
 - `epic update` → update an existing epic interactively
 - `epic status` → show progress
 - `epic abort` → abort
@@ -96,8 +106,9 @@ Two levels of feature flags exist in the epic system:
 ### Reference Documents
 
 - **Full architecture** → `references/architecture.md` (context isolation, storage model, skill topology, engineering best practices)
-- **`epic init` procedure** → `references/init.md` (first-time repo setup, includes PM configuration)
-- **PM integration** → `references/pm-integration.md` (tool abstraction, ownership modes, per-tool operations)
+- **`epic init` procedure** → `references/init.md` (first-time repo setup, includes PM tool selection)
+- **PM contract** → `references/pm-contract.md` (adapter API, ownership modes, action definitions)
+- **PM adapters** → `references/pm/github.md`, `pm/linear.md`, `pm/jira.md` (tool-specific implementations)
 - **Feature flags** → `references/feature-flags.md` (project-level flags, single TS module, flag lifecycle)
 
 ### Project Board Integration
@@ -241,13 +252,13 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
 
 6. **Create the epic issue and stage sub-issues.**
 
-   Read the PM configuration from `.ai-epics/docs/project-setup.md`. The behavior depends on the configured tool and ownership mode (see `references/pm-integration.md`):
+   Read the PM configuration from `.ai-epics/docs/project-setup.md`. The behavior depends on the configured tool and ownership mode (see `references/pm-contract.md` → `pm/{tool}.md`):
 
    - **owner mode:** Create the epic issue and stage sub-issues using the configured PM tool.
    - **contributor mode:** Ask the user for the existing epic issue ID/URL. Skip sub-issue creation.
    - **none:** Skip all PM operations.
 
-   The examples below show GitHub (owner mode). For other tools, consult `references/pm-integration.md`.
+   The examples below show GitHub (owner mode). For other tools, consult `references/pm-contract.md` → `pm/{tool}.md`.
 
    First, create the **parent epic issue** (owner mode only):
    ```bash
@@ -846,7 +857,7 @@ Abort the current epic without destroying work:
 
 1. **Read current configuration** from `.ai-epics/docs/project-setup.md` (if it exists). Show current values.
 
-2. **Walk through the configuration questions** (see `references/pm-integration.md` → Configuration Flow):
+2. **Walk through the configuration questions** (see `references/pm-contract.md` → `pm/{tool}.md` → Configuration Flow):
    - Which PM tool? (GitHub Issues / Linear / Jira / None)
    - Do you own epics? (owner / contributor)
    - Tool-specific questions (project board, team key, etc.)
