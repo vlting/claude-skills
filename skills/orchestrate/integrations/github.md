@@ -62,7 +62,15 @@ gh project item-edit --project-id "$PROJECT_NODE_ID" --id "$ITEM_ID" \
   --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
 ```
 
-Board usage: epic/saga issues use **Planning → Done** only. Stage sub-issues move through all columns (Todo → In Progress → In Review → Done).
+### Board status rules
+
+**IMPORTANT — Epic/saga issues and their PRs use only two columns:**
+- **Planning** — when created
+- **Done** — when shipped
+
+They NEVER go in Todo, In Progress, or In Review. Even while actively being worked on, epics/sagas stay in Planning until fully complete.
+
+**Stage sub-issues** move through all columns: Todo → In Progress → In Review → Done.
 
 ## Owner vs Contributor mode
 
