@@ -176,24 +176,25 @@ When the drain loop exits (queue drained, `epic-done` received, or user terminat
 RELAY_SOCK="$(pwd)/.ai-relay/relay.sock"
 RELAY_PID_FILE="$(pwd)/.ai-relay/relay.pid"
 if [ -f "$RELAY_PID_FILE" ] && kill -0 "$(cat "$RELAY_PID_FILE")" 2>/dev/null && [ -S "$RELAY_SOCK" ]; then
-  CLIENT_COUNT=$(node -e "
-  const s = require('net').connect(process.argv[1]);
-  s.write(JSON.stringify({type:'status'})+'\n');
-  s.on('data', d => {
-    for (const line of d.toString().split('\n').filter(Boolean)) {
+  CLIENT_COUNT=$(RELAY_SOCK="$RELAY_SOCK" node <<'SMARTSTOP'
+  const s = require("net").connect(process.env.RELAY_SOCK);
+  const t = setTimeout(() => { console.log("-1"); s.destroy(); }, 2000);
+  s.write(JSON.stringify({type:"status"})+"\n");
+  s.on("data", d => {
+    for (const line of d.toString().split("\n").filter(Boolean)) {
       try {
         const r = JSON.parse(line);
-        if (r.type==='status-response') {
-          // Count only identified clients (not 'unknown' transient connections)
-          const identified = (r.clients||[]).filter(c => c.role !== 'unknown');
+        if (r.type==="status-response") {
+          clearTimeout(t);
+          const identified = (r.clients||[]).filter(c => c.role !== "unknown");
           console.log(identified.length);
           s.destroy();
         }
       } catch {}
     }
   });
-  setTimeout(() => { console.log('-1'); s.destroy(); }, 2000);
-  " "$RELAY_SOCK")
+SMARTSTOP
+  )
   if [ "$CLIENT_COUNT" = "0" ]; then
     kill "$(cat "$RELAY_PID_FILE")" 2>/dev/null
     echo "Relay stopped."
