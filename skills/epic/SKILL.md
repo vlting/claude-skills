@@ -429,9 +429,11 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
 
 4. **Assess scope to decide auto-queue vs manual-queue.**
 
+   **Saga auto-override:** If running under a saga with auto-merge enabled (check `.ai-queue/.orchestrator-state.json` → `saga.autoMerge === true`), **always use auto-queue** — skip the heuristics below entirely. The saga `--auto` flag implies full autonomy including no review walkthrough.
+
    The risk of wasted compute and cascading errors grows with scope. Use `--no-auto` for large-scope stages so the user can review the task breakdown before agents begin executing.
 
-   **Use `--no-auto` when ANY of these apply:**
+   **Use `--no-auto` when ANY of these apply (standalone epics or sagas without `--auto` only):**
    - Stage touches **>15 files** (estimated from research in step 3)
    - Stage involves **cross-cutting concerns** (shared types, provider structure, config, build system)
    - Stage is expected to produce **>5 segments**

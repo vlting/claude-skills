@@ -28,8 +28,8 @@ done
 ```
 /saga                        — Resume saga execution (orchestrator mode)
 /saga {goal description}     — Start a new saga
-/saga --auto                 — Resume with auto-merge (merges epic PRs without human review)
-/saga --auto {goal}          — Start a new saga with auto-merge enabled
+/saga --auto                 — Resume with full autonomy (auto-merge PRs + auto-queue segments, no review walkthrough)
+/saga --auto {goal}          — Start a new saga with full autonomy (auto-merge + auto-queue)
 saga init                    — First-time repo setup (delegates to epic init + creates saga dirs)
 saga configure               — (Re)configure PM integration, ownership mode, notifications
 saga update                  — Update an existing saga (PRD, epics, dependencies)
@@ -40,8 +40,8 @@ saga abort                   — Abort the current saga (preserves all work)
 **Disambiguation:**
 - `/saga` alone (no further text) → resume execution of the active saga
 - `/saga {text}` → start new saga (interactive)
-- `/saga --auto` → resume with auto-merge ON
-- `/saga --auto {text}` → start new saga with auto-merge ON
+- `/saga --auto` → resume with full autonomy (auto-merge + auto-queue)
+- `/saga --auto {text}` → start new saga with full autonomy (auto-merge + auto-queue)
 - If `--auto` was set at saga creation, it persists in roadmap — bare `/saga` reads it automatically
 - `saga init` → first-time repo setup (delegates to `epic init`, then creates saga dirs)
 - `saga configure` → reconfigure PM tool and ownership (delegates to `epic configure`, since config is shared)
