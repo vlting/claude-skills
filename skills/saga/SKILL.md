@@ -28,6 +28,8 @@ done
 ```
 /saga                        — Resume saga execution (orchestrator mode)
 /saga {goal description}     — Start a new saga
+/saga --auto                 — Resume with auto-merge (merges epic PRs without human review)
+/saga --auto {goal}          — Start a new saga with auto-merge enabled
 saga init                    — First-time repo setup (delegates to epic init + creates saga dirs)
 saga configure               — (Re)configure PM integration, ownership mode, notifications
 saga update                  — Update an existing saga (PRD, epics, dependencies)
@@ -38,6 +40,9 @@ saga abort                   — Abort the current saga (preserves all work)
 **Disambiguation:**
 - `/saga` alone (no further text) → resume execution of the active saga
 - `/saga {text}` → start new saga (interactive)
+- `/saga --auto` → resume with auto-merge ON
+- `/saga --auto {text}` → start new saga with auto-merge ON
+- If `--auto` was set at saga creation, it persists in roadmap — bare `/saga` reads it automatically
 - `saga init` → first-time repo setup (delegates to `epic init`, then creates saga dirs)
 - `saga configure` → reconfigure PM tool and ownership (delegates to `epic configure`, since config is shared)
 - `saga update` → update an existing saga interactively
@@ -293,6 +298,7 @@ If no notification channel is configured, fall back to `osascript` (desktop). If
    - **GitHub Issue:** #{number}   ← filled after step 6
    - **Created:** YYYY-MM-DD
    - **Status:** planning
+   - **Auto-merge:** {true | false}   ← set by --auto flag; default false
 
    ## Epic 1: {title}
    **Objective:** {what this epic delivers to users}
@@ -531,7 +537,8 @@ This phase runs when `/saga` (bare) is invoked.
      "pid": 36295,
      "saga": {
        "roadmap": ".ai-sagas/roadmaps/<slug>.md",
-       "currentEpic": <N>
+       "currentEpic": <N>,
+       "autoMerge": true
      },
      "epic": {
        "roadmap": ".ai-epics/roadmaps/YYYY-MM-DD-<epic-slug>.md",
@@ -543,7 +550,11 @@ This phase runs when `/saga` (bare) is invoked.
    ```
    The `saga` field is what distinguishes a saga-driven epic from a standalone epic. It enables the agent to recover the full saga → epic → stage context after any `/clear`.
 
-10. **When the epic completes** (Phase 7: PR is done, PR is created and ready for review), the epic's COMPLETION phase will detect the `saga` field in the state file and **skip deleting it**. Control returns to the saga orchestrator. Update the state file to reflect that the epic is done and the saga should proceed to REVIEW:
+10. **When the epic completes** (Phase 7: PR is done, PR is created and ready for review), the epic's COMPLETION phase will detect the `saga` field in the state file and **skip deleting it**. Control returns to the saga orchestrator.
+
+    **10a.** Read `Auto-merge` from the saga roadmap (or `autoMerge` from the state file).
+
+    **10b.** If auto-merge **OFF** (default): Update the state file and wait for human merge:
     ```bash
     # Update state file — remove epic, keep saga context
     cat > .ai-queue/.orchestrator-state.json << EOF
@@ -558,6 +569,53 @@ This phase runs when `/saga` (bare) is invoked.
     }
     EOF
     ```
+
+    **10c.** If auto-merge **ON** — execute auto-merge procedure:
+
+    1. **Update the stages checklist.** The epic roadmap is the source of truth for stage completion — NOT the PR body checklist (agents often forget to update it). Before merging, reconcile the PR body with reality:
+       - Read the epic roadmap to get the list of stages and their statuses/PR numbers
+       - Read the epic PR body
+       - For each stage that is complete in the roadmap:
+         - Find the stage PR number from the roadmap (`**Stage PR:** #N`)
+         - Update the PR body line to `- [x] Stage N: {title} (#N)` (checked + linked)
+       - Write the corrected body: `gh pr edit $EPIC_PR_NUMBER --body "$UPDATED_BODY"`
+       - This is cosmetic — it makes the merged PR look complete for humans browsing later
+
+    2. **Wait for CI checks.** Poll `gh pr checks` every 15s, timeout 10min.
+       - All SUCCESS or no checks → proceed
+       - FAILURE → notify, fall back to manual
+       - Timeout → notify, fall back to manual
+
+    3. **Merge.** `gh pr merge $EPIC_PR_NUMBER --merge --delete-branch`
+       - Success → low-priority notification, continue
+       - Failure (merge conflict) → attempt self-healing (see below)
+       - Failure (other) → high-priority notification, fall back to manual
+
+    4. **Self-healing on merge conflict:**
+       - Rebase epic branch on latest main: `git checkout epic/<slug> && git fetch origin main && git rebase origin/main`
+       - Attempt to resolve conflicts (the agent should be able to handle most conflicts since it wrote the code)
+       - If resolved: force-push with lease, retry merge
+       - If unresolvable after one attempt: notify, fall back to manual
+
+    5. **Update state file:**
+       ```bash
+       cat > .ai-queue/.orchestrator-state.json << EOF
+       {
+         "role": "orchestrator",
+         "pid": $PPID,
+         "saga": {
+           "roadmap": ".ai-sagas/roadmaps/<slug>.md",
+           "currentEpic": <N>,
+           "returnTo": "review"
+         }
+       }
+       EOF
+       ```
+
+    6. **Proceed to Phase 6 (REVIEW),** then epic Phase 8 (COMPLETION) for cleanup.
+
+    "Fall back to manual" = notify, print terminal message, pause for human. The `autoMerge` flag persists — subsequent epics still attempt auto-merge.
+
     Proceed to Phase 6 (REVIEW).
 
 ---
@@ -565,6 +623,8 @@ This phase runs when `/saga` (bare) is invoked.
 ## Phase 6: REVIEW
 
 **Context scope:** Saga-level — compare what was built against the PRD. This phase runs between epics.
+
+> **Auto-merge note:** In auto-merge mode, the epic PR is already merged before REVIEW runs. If significant drift is detected, the saga pauses (merged code stays on main, but remaining epics are re-evaluated before continuing).
 
 ### Procedure
 
@@ -859,7 +919,7 @@ When invoked without arguments, `/saga` resumes execution of the active saga.
 
 2. **Find the active saga roadmap.** Scan `.ai-sagas/roadmaps/` for a file with `Status: in-progress`. If none found, print "No active saga found. Use `/saga {goal}` to start one." and exit.
 
-3. **Read the saga roadmap.** Extract epic list, dependencies, statuses, PRD path.
+3. **Read the saga roadmap.** Extract epic list, dependencies, statuses, PRD path. Also extract the `Auto-merge` field. If `/saga --auto` was passed on this invocation, set `Auto-merge: true` in the roadmap and commit the change. If the roadmap already has `Auto-merge: true`, use it without needing `--auto` on every resume.
 
 4. **Ensure relay is running.** Invoke `/relay`.
 
@@ -897,6 +957,16 @@ During REVIEW, the saga compares the epic's output against PRD requirements. Dri
 - A requirement turned out to be infeasible
 
 Minor drift is logged. Significant drift pauses for human review.
+
+### Auto-Merge Failures
+
+When auto-merge is enabled, failures are handled per-epic — the `autoMerge` flag persists for subsequent epics:
+
+- **Merge conflicts** → attempt rebase on latest main + resolve conflicts before falling back to manual
+- **CI failures** → notify (high priority), fall back to manual
+- **Branch protection errors** → notify (high priority), fall back to manual
+- **API failures** → retry once, then fall back to manual
+- "Fall back to manual" = notify, print terminal message, pause for human. Human can fix and resume with `/saga`
 
 ### Dependency Deadlock
 
@@ -936,6 +1006,7 @@ created: YYYY-MM-DD
 - **Created:** YYYY-MM-DD
 - **Status:** planning | in-progress | done | aborted
 - **Notification topic:** {ntfy-topic}   ← optional
+- **Auto-merge:** true | false   ← optional, default false
 
 ## Epic 1: {title}
 **Objective:** {what this epic delivers}

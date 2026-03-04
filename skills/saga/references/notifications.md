@@ -105,6 +105,10 @@ notify() {
 | HALT: iteration limit | urgent | "Saga halted: Epic {N} failed {M} times. Human needed." |
 | HALT: deadlock | urgent | "Saga halted: dependency deadlock. Human needed." |
 | Saga aborted | default | "Saga aborted: {title}. Work preserved." |
+| Auto-merge: success | low | "Epic {N} PR #{M} auto-merged. Advancing." |
+| Auto-merge: CI failed | high | "Auto-merge blocked: CI failed on epic PR #{M}." |
+| Auto-merge: conflict resolved | default | "Epic {N} PR #{M}: resolved merge conflict, retrying." |
+| Auto-merge: failed | high | "Auto-merge failed for PR #{M}: {error}. Manual merge needed." |
 
 ---
 

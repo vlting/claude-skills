@@ -747,6 +747,11 @@ Each stage in the roadmap also stores its own board item ID (see Phase 1, step 7
    ```
    Print the PR URL to the terminal. Note that each stage was already reviewed via its own PR — the final review is primarily to verify the rebase and flag removal.
 
+   **Auto-merge conditional:** If the orchestrator state file has `saga.autoMerge: true`, skip `open $PR_URL`. Instead print:
+   ```
+   Epic PR #<N> ready. Auto-merge ON — saga will merge after updating checklist + CI passes.
+   ```
+
 ---
 
 ## Phase 8: COMPLETION
@@ -762,6 +767,8 @@ After the human merges the epic PR:
    " "$(pwd)/.ai-relay/relay.sock"
    ```
    Then call `/relay stop`. This is a **smart stop** — it checks connected clients before shutting down. If Q workers haven't disconnected yet (they're still processing the `epic-done` event), the stop is refused and relay stays alive. Each Q worker also calls `/relay stop` on its way out, so the last agent to exit will be the one that actually stops relay. This "last one out turns off the lights" pattern avoids the race between Epic sending `epic-done` and workers disconnecting.
+
+   **Saga auto-merge note:** When the saga has `autoMerge: true`, the saga orchestrator already merged the PR and deleted the remote branch before COMPLETION runs. Step 0 behavior is unchanged — the saga context already prevents `epic-done` from being sent until the last epic.
 
 1. **Close any remaining open stage sub-issues and move them to "Done" on the board.**
    If any stage sub-issues are still open, close them and update their board status:
@@ -801,6 +808,8 @@ After the human merges the epic PR:
      ```
 
    **Note:** Stage branches are already deleted by `gh pr merge --delete-branch` in Phase 6. The feature flag was already removed in Phase 7.
+
+   **Auto-merge note:** In auto-merge mode, `--delete-branch` was already passed to `gh pr merge` by the saga orchestrator, so the remote epic branch is already deleted. Local cleanup still applies.
 
 5. **Clean up the orchestrator state file.** If `.ai-queue/.orchestrator-state.json` exists and belongs to this agent (PID matches), delete it:
    ```bash
