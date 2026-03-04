@@ -1,8 +1,0 @@
-{
-  "branch_prefix_routing": {
-    "enabled": true,
-    "description": "Route stage branches to feat/, fix/, chore/, or docs/ prefixes based on stage classification (epic branch always uses epic/ prefix)",
-    "added": "2026-02-24",
-    "updated": "2026-02-27"
-  }
-}
