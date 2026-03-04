@@ -109,19 +109,31 @@ Before merging a completed task: always `git fetch && git rebase` on the target 
 
 3. Scan for pending tasks.
 
-### Claim → Execute → Archive → Next
+### Main Loop (NEVER EXIT unless told to)
 
+**CRITICAL: The drain loop runs continuously. After completing a task or waking from idle, ALWAYS loop back to step 1. The ONLY way to exit is receiving an `epic-done` event.**
+
+```
+┌─→ 1. Scan for pending tasks
+│   2. If found → Claim → Execute → Archive → /clear → loop back to 1
+│   3. If none  → Idle Wait (block up to 9 min) → loop back to 1
+│   4. If epic-done received → EXIT
+└───────────────────────────────────────────────────────────────────┘
+```
+
+**Claim → Execute → Archive:**
 1. **Claim:** Atomically rename `XXX.md` → `XXX-active.md`. Write LAT + PID. Send `task-claimed` event.
 2. **Execute:** See Task Execution below.
 3. **Archive:** Move to `_completed/{hash}.md` where hash = commit short SHA. Send `task-completed` event.
 4. **Context clear:** `/clear` between tasks. Each task starts with fresh context.
-5. **Next:** Scan for more pending tasks. If none → idle wait.
+5. **Loop back** to scan for more pending tasks.
 
 ### Exit
 
-- On `epic-done` event → exit drain loop.
+- **ONLY** on `epic-done` event → exit drain loop.
 - Print status: tasks completed this session, any errors.
 - Call relay smart stop (last agent out stops the server).
+- **Never exit just because the queue is empty.** Always idle-wait and re-scan.
 
 **!! ROLE BOUNDARY !!**
 Q is execution-only. A `/q` worker:
@@ -152,9 +164,11 @@ If a worktree exists for the orphaned task, check for uncommitted work. If salva
 
 ## Idle Waiting
 
+**IMPORTANT: Idle waiting is NOT exiting. After idle wait completes, ALWAYS loop back to scan for tasks again. This is a 9-minute watch cycle that refreshes indefinitely.**
+
 When no pending tasks exist:
 
-**With relay:** Block on socket events. Wait for `work-queued`, `epic-done`, or `worker-disconnected`:
+**With relay (preferred):** Block on socket events for up to 9 minutes. Then re-scan and wait again:
 ```bash
 node -e "
 const s = require('net').connect(process.argv[1]);
@@ -173,17 +187,17 @@ s.on('data', d => {
     } catch {}
   }
 });
-" "$RELAY_SOCK" "600000" "work-queued" "epic-done" "worker-disconnected"
+" "$RELAY_SOCK" "540000" "work-queued" "epic-done" "worker-disconnected"
 ```
 
 | Event received | Action |
 |---------------|--------|
-| `work-queued` | Re-scan queue, claim next task |
-| `epic-done` | Exit drain loop |
-| `worker-disconnected` | Check for orphaned tasks |
-| `IDLE_TIMEOUT` | Re-scan queue (safety net) |
+| `work-queued` | **Loop back** — re-scan queue, claim next task |
+| `epic-done` | **Exit** drain loop (the ONLY exit condition) |
+| `worker-disconnected` | Check for orphaned tasks, then **loop back** |
+| `IDLE_TIMEOUT` (9 min) | **Loop back** — re-scan queue (safety net), then idle-wait again |
 
-**Without relay:** Poll `.ai-queue/` every 15s for new pending files. No timeout — runs indefinitely.
+**Without relay (fallback):** Poll `.ai-queue/` every 15s for new pending files. Never exit — runs indefinitely until `epic-done`.
 
 ---
 
