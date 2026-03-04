@@ -4,7 +4,7 @@ description: "Queue a task or drain the task queue."
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 11.3.0
+  version: 11.4.0
 ---
 
 # Q Command
@@ -172,13 +172,19 @@ When the drain loop exits (queue drained, `epic-done` received, or user terminat
 
 **Smart stop procedure (inline — do NOT shortcut this):**
 
+The smart stop checks TWO independent signals before stopping relay:
+1. **Relay-tracked live agents** — PIDs that have identified with the relay and are still alive (survives transient connections)
+2. **Connected clients** — sockets currently open to the relay
+
+Both must be zero to stop. This prevents killing relay while agents are actively working but between transient connections.
+
 ```bash
 RELAY_SOCK="$(pwd)/.ai-relay/relay.sock"
 RELAY_PID_FILE="$(pwd)/.ai-relay/relay.pid"
 if [ -f "$RELAY_PID_FILE" ] && kill -0 "$(cat "$RELAY_PID_FILE")" 2>/dev/null && [ -S "$RELAY_SOCK" ]; then
-  CLIENT_COUNT=$(RELAY_SOCK="$RELAY_SOCK" node <<'SMARTSTOP'
+  STOP_RESULT=$(RELAY_SOCK="$RELAY_SOCK" node <<'SMARTSTOP'
   const s = require("net").connect(process.env.RELAY_SOCK);
-  const t = setTimeout(() => { console.log("-1"); s.destroy(); }, 2000);
+  const t = setTimeout(() => { console.log("TIMEOUT"); s.destroy(); }, 2000);
   s.write(JSON.stringify({type:"status"})+"\n");
   s.on("data", d => {
     for (const line of d.toString().split("\n").filter(Boolean)) {
@@ -187,7 +193,9 @@ if [ -f "$RELAY_PID_FILE" ] && kill -0 "$(cat "$RELAY_PID_FILE")" 2>/dev/null &&
         if (r.type==="status-response") {
           clearTimeout(t);
           const identified = (r.clients||[]).filter(c => c.role !== "unknown");
-          console.log(identified.length);
+          const liveAgents = r.liveAgents || 0;
+          const blocking = Math.max(identified.length, liveAgents);
+          console.log(blocking === 0 ? "SAFE" : `BLOCKED:${identified.length} connected, ${liveAgents} live agents`);
           s.destroy();
         }
       } catch {}
@@ -195,13 +203,13 @@ if [ -f "$RELAY_PID_FILE" ] && kill -0 "$(cat "$RELAY_PID_FILE")" 2>/dev/null &&
   });
 SMARTSTOP
   )
-  if [ "$CLIENT_COUNT" = "0" ]; then
+  if [ "$STOP_RESULT" = "SAFE" ]; then
     kill "$(cat "$RELAY_PID_FILE")" 2>/dev/null
     echo "Relay stopped."
-  elif [ "$CLIENT_COUNT" = "-1" ]; then
+  elif [ "$STOP_RESULT" = "TIMEOUT" ]; then
     echo "Relay status query timed out. Not stopping."
   else
-    echo "Relay still has $CLIENT_COUNT connected agent(s). Not stopping."
+    echo "Relay not stopped — ${STOP_RESULT#BLOCKED:}."
   fi
 else
   echo "Relay is not running."
@@ -210,7 +218,7 @@ fi
 
 This is called at every drain loop exit path — the smart stop makes it safe to call unconditionally.
 
-> **CRITICAL: Never `kill` the relay PID directly.** The relay server is shared across all agents in all terminals. Always use the smart stop above, which checks for connected clients first. The relay server also has a defense-in-depth SIGTERM guard that refuses to die if identified clients are connected, but agents must not rely on this — always use the smart stop protocol.
+> **CRITICAL: Never `kill` the relay PID directly.** The relay server is shared across all agents in all terminals. Always use the smart stop above, which checks both connected clients AND known live agent PIDs. The relay server also has a defense-in-depth SIGTERM guard that refuses to die if live agents exist, but agents must not rely on this — always use the smart stop protocol.
 
 ### Event emission
 

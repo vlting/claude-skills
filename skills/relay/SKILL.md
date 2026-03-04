@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 2.2.0
+  version: 2.3.0
 ---
 
 # Relay
@@ -110,15 +110,17 @@ Wait up to 2 seconds for `.ai-relay/relay.sock` to appear. Verify by connecting 
 
 ### `/relay stop`
 
-Smart stop — refuses to shut down if agents are still connected. This enables the "last one out turns off the lights" pattern: multiple agents (Q workers, Epic orchestrator) all call `/relay stop` on exit, but only the last one actually stops the server.
+Smart stop — refuses to shut down if agents are still alive. This enables the "last one out turns off the lights" pattern: multiple agents (Q workers, Epic orchestrator) all call `/relay stop` on exit, but only the last one actually stops the server.
+
+The relay server tracks all agent PIDs that have ever identified — even after their transient connections close. The status response includes a `liveAgents` count (PIDs confirmed alive via `kill -0`). The smart stop checks this count, not just currently-connected sockets, preventing premature shutdown while agents are actively working between connections.
 
 **Procedure:**
 
 1. **Check if relay is running.** Read `.ai-relay/relay.pid`, verify the PID is alive, verify the socket is responsive. If relay is not running, print "Relay is not running." and exit.
 
-2. **Query connected clients:**
+2. **Query status and check for live agents:**
    ```bash
-   CLIENT_COUNT=$(node -e "
+   STOP_RESULT=$(node -e "
    const s = require('net').connect(process.argv[1]);
    s.write(JSON.stringify({type:'status'})+'\n');
    s.on('data', d => {
@@ -126,24 +128,27 @@ Smart stop — refuses to shut down if agents are still connected. This enables 
        try {
          const r = JSON.parse(line);
          if (r.type==='status-response') {
-           console.log(r.clients ? r.clients.length : 0);
+           const identified = (r.clients||[]).filter(c => c.role !== 'unknown');
+           const liveAgents = r.liveAgents || 0;
+           const blocking = Math.max(identified.length, liveAgents);
+           console.log(blocking === 0 ? 'SAFE' : 'BLOCKED:' + identified.length + ' connected, ' + liveAgents + ' live agents');
            s.destroy();
          }
        } catch {}
      }
    });
-   setTimeout(() => { console.log('0'); s.destroy(); }, 2000);
+   setTimeout(() => { console.log('TIMEOUT'); s.destroy(); }, 2000);
    " "$(pwd)/.ai-relay/relay.sock")
    ```
 
-3. **If `CLIENT_COUNT > 0` (and `--force` was NOT passed):** Refuse to stop. Print:
+3. **If `STOP_RESULT` is not `SAFE` (and `--force` was NOT passed):** Refuse to stop. Print:
    ```
-   Relay still has N connected agent(s). Not stopping.
+   Relay not stopped — <details from STOP_RESULT>.
    Use `/relay stop --force` to stop regardless.
    ```
    Exit without stopping.
 
-4. **If `CLIENT_COUNT == 0` or `--force` was passed:** Stop the server:
+4. **If `STOP_RESULT` is `SAFE` or `--force` was passed:** Stop the server:
    ```bash
    PID=$(cat .ai-relay/relay.pid 2>/dev/null)
    if [ -n "$PID" ]; then
@@ -288,7 +293,7 @@ Epic starts relay during PLAN and calls `/relay stop` during COMPLETION. The sma
 
 ### Lifecycle: "last one out turns off the lights"
 
-Both Q and Epic call `/relay stop` on exit. Since the stop is smart (refuses if agents are connected), the relay stays alive as long as any agent needs it. The last agent to disconnect and call `/relay stop` is the one that actually shuts down the server. No ownership tracking is needed — the connected-client count is the sole arbiter.
+Both Q and Epic call `/relay stop` on exit. Since the stop is smart (refuses if agents are alive), the relay stays alive as long as any agent needs it. The last agent to exit and call `/relay stop` is the one that actually shuts down the server. The server tracks all agent PIDs that have ever identified — even across transient connections — and checks their liveness via `kill -0`. This prevents premature shutdown while agents are actively working but between socket connections.
 
 **Typical multi-agent flow:**
 ```

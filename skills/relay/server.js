@@ -22,6 +22,7 @@ if (fs.existsSync(SOCKET_PATH)) {
 // Client tracking
 // ---------------------------------------------------------------------------
 const clients = new Map(); // socket → { role, pid, tasks: Set, connectedAt }
+const knownAgents = new Map(); // pid → { role, lastSeen } — survives disconnects
 
 function broadcast(msg, exclude) {
   const data = JSON.stringify(msg) + '\n';
@@ -55,6 +56,10 @@ function handleMessage(socket, info, msg) {
       }
       info.role = msg.role;
       info.pid = msg.pid;
+      // Track this agent across transient connections
+      if (msg.pid) {
+        knownAgents.set(msg.pid, { role: msg.role, lastSeen: new Date().toISOString() });
+      }
       // Send current state to the newly identified client
       send(socket, {
         type: 'state',
@@ -85,6 +90,7 @@ function handleMessage(socket, info, msg) {
           tasks: [...c.tasks],
           connectedAt: c.connectedAt,
         })),
+        liveAgents: liveAgentCount(),
         uptime: process.uptime(),
       });
       break;
@@ -152,14 +158,25 @@ function cleanup() {
 
 process.on('exit', cleanup);
 
-// SIGTERM: refuse to die if identified clients are still connected.
-// This prevents an agent from accidentally killing relay while others depend on it.
+// Check if any known agent PIDs are still alive (works across transient connections)
+function liveAgentCount() {
+  let alive = 0;
+  for (const [pid] of knownAgents) {
+    try { process.kill(pid, 0); alive++; } catch { knownAgents.delete(pid); }
+  }
+  return alive;
+}
+
+// SIGTERM: refuse to die if agents are still alive — checks BOTH connected sockets
+// AND known agent PIDs (which persist across transient connections).
 // A second SIGTERM (or SIGINT) forces shutdown regardless.
 let forceNextSignal = false;
 process.on('SIGTERM', () => {
-  const identified = [...clients.values()].filter(c => c.role !== 'unknown');
-  if (identified.length > 0 && !forceNextSignal) {
-    console.log(`relay: SIGTERM ignored — ${identified.length} identified client(s) still connected. Send again to force.`);
+  const connectedIdentified = [...clients.values()].filter(c => c.role !== 'unknown');
+  const liveAgents = liveAgentCount();
+  const blocking = Math.max(connectedIdentified.length, liveAgents);
+  if (blocking > 0 && !forceNextSignal) {
+    console.log(`relay: SIGTERM ignored — ${connectedIdentified.length} connected client(s), ${liveAgents} known live agent(s). Send again to force.`);
     forceNextSignal = true;
     // Reset force flag after 10 seconds so stale double-kills don't accumulate
     setTimeout(() => { forceNextSignal = false; }, 10000);
