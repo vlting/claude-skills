@@ -4,7 +4,7 @@ description: "Queue a task or drain the task queue."
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 11.4.0
+  version: 11.5.0
 ---
 
 # Q Command
@@ -333,7 +333,9 @@ q
 
 > **MANDATORY — complete ALL steps in order, even if the queue appears empty. Do NOT skip steps or short-circuit.**
 
-1. **Check for orchestrator state file** — read `QUEUE_DIR/.orchestrator-state.json`. If it exists and `pid` matches `$PPID`, activate **orchestrator mode** (drain-and-return, no idle waiting, no `/clear` between tasks). Otherwise, run as a normal worker.
+> **ROLE BOUNDARY — Q NEVER RUNS EPIC LIFECYCLE PHASES.** The Q skill is an execution engine: it claims tasks, executes them in worktrees, merges, and archives. It NEVER performs epic phases (VERIFY, ADVANCE, BREAKDOWN, ITERATE, PR, COMPLETION) and NEVER interprets the `returnTo` field in the orchestrator state file. Those phases are exclusively owned by the `/epic` skill. When the drain loop exits in orchestrator mode, it literally returns (stops executing) — it does NOT read the state file to figure out "what to do next" and it does NOT run any epic or saga logic. If `/q` was invoked directly by the user, the agent is a **worker** regardless of what the state file says.
+
+1. **Check for orchestrator state file** — read `QUEUE_DIR/.orchestrator-state.json`. If it exists, **run `echo $PPID` as a Bash command** and compare the numeric result to the `pid` field in the state file. They must match **exactly** (integer comparison). If they match, activate **orchestrator mode** (drain-and-return, no idle waiting, no `/clear` between tasks). If they don't match or the file doesn't exist, run as a **normal worker**. Do NOT skip this check or assume the PID matches — always verify with the actual Bash output.
 2. Ensure relay is running (start if needed — see **Relay Integration**)
 3. Connect to relay as worker (`identify` with PID)
 4. Scan queue for claimable tasks → execute each one
@@ -360,7 +362,7 @@ The drain loop scans for the `next available queued task` (defined as "the lowes
 6. **When no more tasks can be claimed** (queue empty, or all remaining are `-active.md`, `-wip.md`, or dependency-blocked), run the **Orphan Recovery Protocol** (see below). If orphan recovery reclaims any tasks, continue the drain loop (go back to step 1).
 7. **If no orphans were found**, the exit behavior depends on the agent's mode:
 
-   **Orchestrator mode** (state file exists with matching PID): **Exit the drain loop immediately.** Print a status and return control to the calling skill (`/epic` or `/saga`). The orchestrator does NOT start waiting for new tasks — it has a lifecycle to continue (VERIFY, ITERATE, ADVANCE, etc.).
+   **Orchestrator mode** (state file exists with matching PID): **Exit the drain loop immediately.** Print the status below and **stop executing** — literally do nothing more. The calling skill (`/epic` or `/saga`), which invoked `/q` as a sub-step, will resume its own lifecycle when it regains control. **Q does NOT read `returnTo`, does NOT run VERIFY/ADVANCE/BREAKDOWN/ITERATE/PR/COMPLETION, and does NOT interpret the state file beyond the PID check.** If there is no calling skill (i.e., the user invoked `/q` directly), then exiting the drain loop means the agent is done.
 
    ```
    --- Queue drained (orchestrator returning to lifecycle) ---
