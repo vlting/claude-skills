@@ -17,6 +17,7 @@ Plans and executes development goals through stages. Each stage breaks down into
 /orchestrate                 — Resume active orchestration
 /orchestrate --auto          — Resume with auto-merge enabled
 orchestrate init             — First-time repo setup
+orchestrate update           — Modify an active roadmap
 orchestrate status           — Show progress
 orchestrate abort            — Abort (preserves all work)
 ```
@@ -25,6 +26,7 @@ orchestrate abort            — Abort (preserves all work)
 - `/orchestrate` alone → resume active orchestration
 - `/orchestrate {text}` → new initiative
 - `/orchestrate --auto` → resume with auto-merge (merges PRs automatically)
+- `/orchestrate update` → interactively modify an active roadmap
 - If `--auto` was set at creation, it persists — bare `/orchestrate` reads it automatically
 
 ---
@@ -458,6 +460,50 @@ For multi-epic, show epic-level progress with stage summaries.
 5. Write `.ai-orchestrate/config.yml`.
 6. Add `.ai-queue/` and `.ai-relay/` to `.gitignore` if not present.
 7. Print summary.
+
+---
+
+## `orchestrate update`
+
+Interactively modify an active roadmap with safe guards and integration side-effects.
+
+1. **List active roadmaps.** Scan `.ai-orchestrate/roadmaps/` for files where frontmatter `status` is not `done` or `aborted`. If none → print "No active roadmaps." and stop. Otherwise AskUserQuestion with a numbered list.
+
+2. **Read selected roadmap.** Parse type (saga vs single-epic), full structure, and per-stage/epic statuses.
+
+3. **Prompt for changes.** AskUserQuestion: "What changes do you want to make to this roadmap?"
+
+4. **Generate diff summary.** Compact before/after showing:
+   - `+` additions (new stages/epics/criteria)
+   - `~` modifications (title, criteria, or scope changes)
+   - `-` removals (deleted pending stages/epics/criteria)
+
+5. **Confirm loop.** AskUserQuestion: "Apply these changes?" Options: "Yes, apply" / "Let me revise" (free-text). Loop steps 3–5 until confirmed or user cancels. Max 3 loops → stop and print the last diff for manual editing.
+
+6. **Apply changes.** Write updated roadmap. Preserve all execution metadata: PR numbers, issue IDs, board IDs, iteration counts, checkmarks on completed criteria, stage PR references.
+
+7. **Side-effects:**
+   - **State file:** Adjust `currentStage` / `currentEpic` indices in `.ai-queue/.orchestrator-state.json` if structure shifted (e.g., stage inserted before current).
+   - **New epics (saga):** Create branch (`epic/{epic-slug}`), create tracking ticket if integration configured.
+   - **Title changes:** `gh issue edit` if GitHub integration active and issue exists for the item.
+   - **Removed pending items:** Close associated tickets/issues with comment "Removed from roadmap."
+
+8. **Commit.**
+   ```bash
+   git checkout main
+   git add .ai-orchestrate/roadmaps/{slug}.md
+   git commit -m "docs({slug}): update roadmap"
+   git push origin main
+   git checkout -   # return to previous branch
+   ```
+
+9. **Print summary.** Show what changed: additions, modifications, removals, and any integration actions taken.
+
+### Constraints
+
+- **Cannot update `done` or `aborted` roadmaps.** Filter these out in step 1.
+- **Cannot remove or reorder `in-progress` or `done` stages/epics** — only `pending` items can be removed or reordered.
+- **Editing titles/criteria on `in-progress` stages is allowed** (scope refinement) but not status changes.
 
 ---
 
