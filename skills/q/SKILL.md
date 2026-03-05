@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 12.0.0
+  version: 13.0.0
 ---
 
 # Q
@@ -121,12 +121,23 @@ Before merging a completed task: always `git fetch && git rebase` on the target 
 └───────────────────────────────────────────────────────────────────┘
 ```
 
+**Scan:**
+1. List `XXX.md` files (pending). Pick lowest number whose dependencies are met.
+2. Also list `XXX-active.md` files. For each, run orphan detection (see Orphan Recovery). If orphaned → recover to pending, then re-scan.
+3. If no claimable task → Idle Wait.
+
 **Claim → Execute → Archive:**
-1. **Claim:** Atomically rename `XXX.md` → `XXX-active.md`. Write LAT + PID. Send `task-claimed` event.
+1. **Claim (atomic write-then-rename):**
+   - Read `XXX.md` content.
+   - Prepend `<!-- LAT: {ISO timestamp} -->` and `<!-- PID: $PPID -->` headers to the content.
+   - Write the updated content back to `XXX.md`.
+   - Rename `XXX.md` → `XXX-active.md`.
+   - Send `task-claimed` event.
+   All tracking headers must exist in the file **before** the rename. Another worker seeing `XXX-active.md` must always find a PID inside.
 2. **Execute:** See Task Execution below.
 3. **Archive:** Move to `_completed/{hash}.md` where hash = commit short SHA. Send `task-completed` event.
 4. **Context clear:** `/clear` between tasks. Each task starts with fresh context.
-5. **Loop back** to scan for more pending tasks.
+5. **Loop back** to scan.
 
 ### Exit
 
@@ -152,9 +163,17 @@ A task is orphaned when its claiming agent dies. Detection:
 | Signal | Verdict |
 |--------|---------|
 | `worker-disconnected` relay event with task ID | Immediately orphaned |
-| PID in task file is dead (`kill -0` fails) | Orphaned |
+| PID present + `kill -0` fails | Orphaned |
 | LAT stale (>5 min) + PID dead | Orphaned |
-| LAT stale but PID alive | Agent is slow, not orphaned |
+| LAT stale but PID alive | Agent is slow, **not** orphaned |
+| No PID + file mtime > 60s ago | Orphaned (claim crashed before completing) |
+| No PID + file mtime ≤ 60s ago | **Not** orphaned — claim in progress, skip and re-check next scan |
+
+**Check file mtime** (for missing-PID cases):
+```bash
+# Returns age in seconds
+echo $(( $(date +%s) - $(stat -f %m "$FILE") ))
+```
 
 **Recovery:** Rename `XXX-active.md` → `XXX.md` (back to pending). Clear LAT/PID/worktree headers. The task re-enters the queue for any worker to claim.
 
