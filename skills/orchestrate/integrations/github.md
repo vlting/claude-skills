@@ -54,13 +54,30 @@ gh issue close {number} --repo OWNER/REPO --comment "Completed."
 Requires GitHub Projects v2 with `project_number` in config.
 
 ```bash
-# Add item to board
+# Add item to board (idempotent — returns existing item if already added)
 ITEM_ID=$(gh project item-add $PROJECT_NUMBER --owner OWNER --url "$ISSUE_URL" --format json | jq -r '.id')
 
 # Move status (resolve field/option IDs once, cache in roadmap metadata)
 gh project item-edit --project-id "$PROJECT_NODE_ID" --id "$ITEM_ID" \
   --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID"
 ```
+
+## move-to-done
+
+Shorthand for moving an issue to Done on the project board. Used in ADVANCE (stage sub-tickets) and SHIP (epic/saga tickets).
+
+```bash
+# Move issue to Done on project board
+# Requires: PROJECT_NUMBER, OWNER, PROJECT_NODE_ID, STATUS_FIELD_ID, DONE_OPTION_ID
+# All values from config.yml / roadmap metadata
+ITEM_ID=$(gh project item-add $PROJECT_NUMBER --owner OWNER --url "$ISSUE_URL" --format json | jq -r '.id')
+gh project item-edit --project-id "$PROJECT_NODE_ID" --id "$ITEM_ID" \
+  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$DONE_OPTION_ID"
+```
+
+**SHIP checklist (multi-epic):**
+1. Move the individual epic issue to Done
+2. After the final epic: also move the saga issue to Done
 
 ### Board status rules
 

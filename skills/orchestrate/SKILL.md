@@ -154,7 +154,7 @@ setTimeout(() => s.destroy(), 500);
    ...
    ```
 
-6. **Load integrations** (see Integrations section). If configured: create tracking ticket, create draft PR linking to roadmap. If none: just create the draft PR with `gh pr create --draft` (git is always available).
+6. **Load integrations** (see Integrations section). If configured: create tracking ticket, add it to project board in Planning status, create draft PR linking to roadmap. If none: just create the draft PR with `gh pr create --draft` (git is always available).
 
 7. **Commit roadmap to main:**
    ```bash
@@ -280,7 +280,7 @@ Enter the wait loop. Workers (`/q`) claim and execute tasks.
    gh pr merge --merge --delete-branch
    ```
 
-3. **Update roadmap:** Mark stage done. If integration: close sub-ticket, move status.
+3. **Update roadmap:** Mark stage done. If integration: close sub-ticket, move board status to Done. Do NOT move the parent epic/saga — they stay in Planning until SHIP.
 
 4. **More stages?** → BREAKDOWN for next stage.
    **All stages done?** → SHIP.
@@ -306,7 +306,9 @@ Enter the wait loop. Workers (`/q`) claim and execute tasks.
 5. **Cleanup:**
    - Archive roadmap: move to `.ai-orchestrate/archive/`
    - Delete orchestrator state file
-   - If integration: close tracking ticket, move to Done
+   - If integration: close tracking ticket, move board status to Done (see `move-to-done` in integration docs)
+     - For multi-epic: move the individual epic issue to Done on the board
+     - After final epic: also move the saga issue to Done on the board
    - Send `epic-done` via relay (workers exit)
    - Call relay smart stop
    - Commit archive to main
