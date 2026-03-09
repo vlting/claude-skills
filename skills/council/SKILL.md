@@ -1,0 +1,258 @@
+---
+name: council
+description: "Multi-persona planning skill that analyzes tasks from different engineering/design angles, then reconciles into a consensus plan."
+user_invocable: true
+license: MIT
+metadata:
+  author: Lucas Castro
+  version: 1.0.0
+---
+
+# Council
+
+Analyzes a task from multiple expert perspectives independently, then synthesizes a single reconciled plan — cherry-picking best ideas and resolving conflicts via concessions and confidence weighting.
+
+```
+/council {task}                              — Auto-select relevant personas (4-7)
+/council {task} --personas arch,pragma,dx    — Explicit subset
+```
+
+---
+
+## Personas
+
+Seven available perspectives. Each brings a distinct lens and a grounding standard — a question they always ask.
+
+| Key | Persona | Lens | Standard |
+|-----|---------|------|----------|
+| `arch` | Fundamentals Architect | Type safety, abstractions, API contracts | "Would this survive a major refactor?" |
+| `pragma` | Pragmatic Maximizer | Ship real value, scope control, reversibility | "What's the smallest change that delivers 80% of the value?" |
+| `dx` | DX Perfectionist | API ergonomics, discoverability, error messages | "Would a new dev understand this without reading the source?" |
+| `ux` | UX Advocate | Accessibility, interaction quality, perceived perf | "Does this feel right for every user, on every device?" |
+| `design` | Design Purist | Design system coherence, tokens, visual rhythm | "Does this respect the system's visual language?" |
+| `perf` | Performance Engineer | Bundle size, runtime cost, rendering efficiency | "What's the cost at scale — 1000 components, slow 3G?" |
+| `maint` | Maintainability Guardian | Readability, testability, coupling, migration paths | "Will the next person curse or thank us?" |
+
+**Conflict-resolution weights** (used when personas disagree):
+- `pragma` — weighted on scope decisions
+- `arch` — weighted on API contracts and type boundaries
+- `perf` — weighted on measurable performance claims
+- `ux` + `design` — weighted on user-facing decisions
+- `maint` — weighted on long-term maintenance cost
+- `dx` — weighted on developer ergonomics
+
+---
+
+## Invocation Parsing
+
+1. Parse `{task}` — everything after `/council` that isn't a flag
+2. Parse `--personas` — comma-separated keys (e.g., `arch,pragma,dx`)
+3. If `--personas` omitted → auto-select (see heuristic below)
+
+**Auto-selection heuristic (4-7 personas):**
+- **Always include:** `pragma` + `maint` (grounding voices)
+- **Include if task mentions or touches:** UI/components → `ux`, `design`; APIs/types/abstractions → `arch`, `dx`; rendering/bundle/speed → `perf`; developer workflow/tooling → `dx`
+- **Default to all 7** if the task is broad or ambiguous
+- **Minimum 4** — if heuristic selects fewer, add by relevance order: `arch` → `dx` → `perf` → `ux` → `design`
+
+---
+
+## Execution Phases
+
+### Phase 1: EXPLORE
+
+Launch **one Explore agent** to gather codebase context relevant to the task.
+
+**Agent config:**
+- `subagent_type: "Explore"`
+- Thoroughness: `"very thorough"`
+
+**Prompt template:**
+```
+Explore the codebase to build a context brief for this task:
+
+TASK: {task}
+
+Produce a structured brief with these sections:
+1. **Affected Area** — files, modules, packages touched
+2. **Existing Patterns** — how similar things are currently done
+3. **Constraints** — type boundaries, API contracts, dependencies
+4. **Prior Art** — related implementations already in the codebase
+5. **Open Questions** — ambiguities or unknowns that need resolution
+
+Be thorough. Check tests, types, and usage sites — not just implementations.
+```
+
+**Output:** A structured context brief (plain text). This feeds into every persona agent.
+
+---
+
+### Phase 2: DELIBERATE
+
+Launch persona Plan agents in **batches of 3** (max parallel). Each persona gets identical context but responds through its unique lens.
+
+**Agent config:**
+- `subagent_type: "Plan"`
+- `mode: "plan"`
+
+**Persona prompt template:**
+
+```
+You are the {PERSONA_NAME} on an engineering council.
+
+YOUR LENS: {LENS_DESCRIPTION}
+YOUR STANDARD: Before proposing anything, ask yourself: "{STANDARD_QUESTION}"
+
+CONTEXT BRIEF:
+{explore_brief}
+
+TASK:
+{task}
+
+Respond with EXACTLY this structure:
+
+## Proposal
+Your recommended approach (2-5 bullet points, concrete and actionable).
+
+## Risks
+What could go wrong with YOUR OWN proposal (1-3 bullets).
+
+## Non-Negotiables
+1-2 things you will NOT compromise on, with justification.
+
+## Concessions
+Things you'd be willing to give up if other perspectives push back (1-3 bullets).
+These are your pre-declared trade-offs — be specific about what you'd accept instead.
+
+## Confidence
+Rate 1-5 (5 = certain this is right, 1 = speculative).
+One sentence explaining your confidence level.
+```
+
+**Batching:** If 7 personas → batch 1 (3 agents), batch 2 (3 agents), batch 3 (1 agent). If ≤3 personas → single batch.
+
+**Ordering within batches:** No preference — all run in parallel within a batch. Batches run sequentially (wait for batch N to finish before launching batch N+1).
+
+---
+
+### Phase 3: RECONCILE
+
+**No agent** — synthesize directly from persona outputs. This is the critical thinking step.
+
+Process all persona responses through these four filters, in order:
+
+#### 3a. Agreements
+Scan for proposals where **3+ personas align** on the same approach or recommendation.
+- These form the **plan foundation** — adopt directly
+- Note which personas agreed (for attribution)
+
+#### 3b. Cherry-picks
+Find **unique ideas** proposed by only one persona that **no other persona contradicts**.
+- Adopt with attribution: "Per {persona}: {idea}"
+- Only cherry-pick if the idea is concrete and actionable
+
+#### 3c. Compromises
+Identify **conflicts** where personas disagree. Resolve using:
+1. **Concessions** — check if one side pre-declared willingness to concede on this point
+2. **Confidence weighting** — higher-confidence persona gets more weight
+3. **Domain authority** — use conflict-resolution weights (e.g., `perf` wins on measurable performance, `ux` wins on user-facing)
+4. **Synthesis** — sometimes both sides are right; find the approach that satisfies both constraints
+
+Document the resolution: "Conflict between {A} and {B} on {topic}: resolved by {reasoning}"
+
+#### 3d. Open Tensions
+Genuine trade-offs where **no clean resolution exists**:
+- Present both sides clearly
+- State the recommended default (with reasoning)
+- Mark as requiring user decision
+
+---
+
+### Phase 4: PRESENT
+
+Output the reconciled plan in this format:
+
+```markdown
+# Council Plan: {task_summary}
+
+**Personas consulted:** {list with keys}
+
+## Plan
+{Numbered steps — the reconciled, actionable plan}
+
+## Key Decisions
+{Agreements, cherry-picks, and compromise resolutions — briefly attributed}
+
+## Open Tensions
+{If any — present both sides, recommend default, ask user to decide}
+{If none — omit this section}
+
+## Risk Summary
+{Top 3-5 risks aggregated across all personas, deduplicated}
+
+---
+*Reconciled from {N} independent perspectives. Hand off to `/orchestrate` or `/q` for execution.*
+```
+
+**After presenting:**
+- If **open tensions exist** → ask the user to resolve each one before proceeding
+- If **no tensions** → the plan is ready for execution
+- Suggest handoff: `/orchestrate {task}` for multi-step initiatives, `/q {task}` for single-scope work
+
+---
+
+## Full Execution Flow (copy-paste reference)
+
+```
+1. Parse invocation → extract {task}, {personas}
+2. If no --personas → auto-select 4-7 using heuristic
+3. EXPLORE
+   └─ 1× Explore agent (very thorough) → context brief
+4. DELIBERATE
+   └─ Persona Plan agents in batches of 3
+      └─ Each gets: persona identity + context brief + task
+      └─ Each outputs: proposal, risks, non-negotiables, concessions, confidence
+5. RECONCILE (direct synthesis, no agent)
+   └─ Agreements (3+ align) → foundation
+   └─ Cherry-picks (unique + unchallenged) → adopt
+   └─ Compromises (conflicts) → resolve via concessions + confidence + domain weight
+   └─ Open tensions → present both sides + recommend default
+6. PRESENT
+   └─ One coherent plan (not a comparison table)
+   └─ Open tensions → ask user to resolve
+   └─ Ready → suggest /orchestrate or /q handoff
+```
+
+---
+
+## Example Invocations
+
+**Broad task (all 7 fire):**
+```
+/council "Add dark mode toggle to the app"
+```
+→ Auto-selects all 7: UI-facing task touches design, UX, performance, architecture, DX, maintenance, and scope.
+
+**Scoped task (explicit subset):**
+```
+/council "Refactor styled() to support compound variants" --personas arch,dx,perf
+```
+→ Only 3 personas fire. Focused on API contracts, ergonomics, and runtime cost.
+
+**Infrastructure task (auto-selects 4-5):**
+```
+/council "Migrate build from rollup to tsup"
+```
+→ Auto-selects: `pragma` (scope), `maint` (migration path), `dx` (dev workflow), `perf` (build speed), `arch` (output contracts).
+
+---
+
+## Rules
+
+1. **Personas are independent** — they never see each other's output during DELIBERATE
+2. **Reconciliation synthesizes** — it produces ONE plan, not a comparison table
+3. **Concessions make reconciliation tractable** — without them, every conflict is a deadlock
+4. **Confidence is honest** — a persona rating 2/5 is signaling "I'm not sure, defer to others"
+5. **Open tensions are real** — don't force a resolution; some trade-offs need human judgment
+6. **Minimum 4 personas** — fewer than 4 doesn't justify the council overhead; just plan directly
+7. **pragma + maint always present** — unless explicitly excluded via `--personas`
