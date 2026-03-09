@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 1.0.0
+  version: 1.1.0
 ---
 
 # Council
@@ -15,7 +15,22 @@ Analyzes a task from multiple expert perspectives independently, then synthesize
 ```
 /council {task}                              — Auto-select relevant personas (4-7)
 /council {task} --personas arch,pragma,dx    — Explicit subset
+/council {task} --auto                       — Non-interactive: resolve all tensions, skip plan mode
 ```
+
+---
+
+## Flags
+
+### `--auto`
+
+Autonomous execution mode. Changes behavior:
+1. **Skip `EnterPlanMode`** — council runs in the caller's current mode (typically `acceptEdits` when invoked by `/orchestrate --auto`)
+2. **Resolve all open tensions** — use best judgment via domain authority + confidence weighting instead of asking the user. Document the resolution reasoning, but don't block on user input.
+3. **No handoff suggestion** — return the plan directly. The caller (e.g., `/orchestrate`) decides what to do with it.
+4. **No `AskUserQuestion`** — the entire flow runs without user interaction.
+
+When `--auto` is NOT set, council behaves as before: enters plan mode, presents open tensions for user resolution, and suggests `/orchestrate` or `/q` handoff.
 
 ---
 
@@ -47,7 +62,8 @@ Seven available perspectives. Each brings a distinct lens and a grounding standa
 
 1. Parse `{task}` — everything after `/council` that isn't a flag
 2. Parse `--personas` — comma-separated keys (e.g., `arch,pragma,dx`)
-3. If `--personas` omitted → auto-select (see heuristic below)
+3. Parse `--auto` — boolean flag, enables autonomous mode
+4. If `--personas` omitted → auto-select (see heuristic below)
 
 **Auto-selection heuristic (4-7 personas):**
 - **Always include:** `pragma` + `maint` (grounding voices)
@@ -161,10 +177,17 @@ Identify **conflicts** where personas disagree. Resolve using:
 Document the resolution: "Conflict between {A} and {B} on {topic}: resolved by {reasoning}"
 
 #### 3d. Open Tensions
-Genuine trade-offs where **no clean resolution exists**:
+
+**Standard mode:** Genuine trade-offs where no clean resolution exists:
 - Present both sides clearly
 - State the recommended default (with reasoning)
 - Mark as requiring user decision
+
+**`--auto` mode:** Resolve ALL tensions using best judgment:
+- Apply domain authority weights and confidence scores
+- Choose the recommended default
+- Document: "Auto-resolved: {topic} — chose {approach} because {reasoning}"
+- No tensions remain open; the plan is immediately actionable
 
 ---
 
@@ -184,8 +207,8 @@ Output the reconciled plan in this format:
 {Agreements, cherry-picks, and compromise resolutions — briefly attributed}
 
 ## Open Tensions
-{If any — present both sides, recommend default, ask user to decide}
-{If none — omit this section}
+{Standard mode: present both sides, recommend default, ask user to decide}
+{--auto mode: omit this section — all tensions auto-resolved under Key Decisions}
 
 ## Risk Summary
 {Top 3-5 risks aggregated across all personas, deduplicated}
@@ -194,18 +217,24 @@ Output the reconciled plan in this format:
 *Reconciled from {N} independent perspectives. Hand off to `/orchestrate` or `/q` for execution.*
 ```
 
-**After presenting:**
+**After presenting (standard mode):**
 - If **open tensions exist** → ask the user to resolve each one before proceeding
 - If **no tensions** → the plan is ready for execution
 - Suggest handoff: `/orchestrate {task}` for multi-step initiatives, `/q {task}` for single-scope work
+
+**After presenting (`--auto` mode):**
+- Plan is immediately final — no user interaction
+- No handoff suggestion — the caller drives next steps
+- The footer line changes to: `*Reconciled from {N} independent perspectives. Auto-resolved — ready for execution.*`
 
 ---
 
 ## Full Execution Flow (copy-paste reference)
 
 ```
-1. Enter plan mode (EnterPlanMode tool) — council is a planning-only skill, never edits code
-2. Parse invocation → extract {task}, {personas}
+1. If NOT --auto → enter plan mode (EnterPlanMode tool)
+   If --auto → skip plan mode, run in caller's mode
+2. Parse invocation → extract {task}, {personas}, {auto}
 3. If no --personas → auto-select 4-7 using heuristic
 4. EXPLORE
    └─ 1× Explore agent (very thorough) → context brief
@@ -217,11 +246,13 @@ Output the reconciled plan in this format:
    └─ Agreements (3+ align) → foundation
    └─ Cherry-picks (unique + unchallenged) → adopt
    └─ Compromises (conflicts) → resolve via concessions + confidence + domain weight
-   └─ Open tensions → present both sides + recommend default
+   └─ Open tensions:
+      └─ Standard: present both sides + recommend default
+      └─ --auto: resolve via domain authority, document reasoning
 7. PRESENT
    └─ One coherent plan (not a comparison table)
-   └─ Open tensions → ask user to resolve
-   └─ Ready → suggest /orchestrate or /q handoff
+   └─ Standard: open tensions → ask user to resolve; suggest handoff
+   └─ --auto: plan is final, no user interaction, no handoff suggestion
 ```
 
 ---
@@ -246,15 +277,22 @@ Output the reconciled plan in this format:
 ```
 → Auto-selects: `pragma` (scope), `maint` (migration path), `dx` (dev workflow), `perf` (build speed), `arch` (output contracts).
 
+**Autonomous mode (called by orchestrate):**
+```
+/council "Build user auth system with OAuth2" --auto
+```
+→ Full council deliberation, all tensions auto-resolved, plan returned without blocking on user input.
+
 ---
 
 ## Rules
 
-1. **Plan mode enforced** — call `EnterPlanMode` as the very first action; council never edits code or files
+1. **Plan mode enforced (standard)** — call `EnterPlanMode` as the very first action; council never edits code or files. **Exception:** `--auto` skips plan mode.
 2. **Personas are independent** — they never see each other's output during DELIBERATE
 3. **Reconciliation synthesizes** — it produces ONE plan, not a comparison table
 4. **Concessions make reconciliation tractable** — without them, every conflict is a deadlock
 5. **Confidence is honest** — a persona rating 2/5 is signaling "I'm not sure, defer to others"
-6. **Open tensions are real** — don't force a resolution; some trade-offs need human judgment
-7. **Minimum 4 personas** — fewer than 4 doesn't justify the council overhead; just plan directly
-8. **pragma + maint always present** — unless explicitly excluded via `--personas`
+6. **Open tensions are real (standard mode)** — don't force a resolution; some trade-offs need human judgment
+7. **Auto-resolve is decisive (`--auto`)** — make the best call using domain weights and move on; never block
+8. **Minimum 4 personas** — fewer than 4 doesn't justify the council overhead; just plan directly
+9. **pragma + maint always present** — unless explicitly excluded via `--personas`

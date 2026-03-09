@@ -5,17 +5,19 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 1.0.0
+  version: 1.1.0
 ---
 
 # Orchestrate
 
 Plans and executes development goals through stages. Each stage breaks down into tasks queued for `/q` workers. Handles everything from single features to multi-epic initiatives.
 
+All planning is done via `/council` — orchestrate never plans in isolation.
+
 ```
-/orchestrate {goal}          — Start new initiative (interactive if broad, direct if narrow)
+/orchestrate {goal}          — Start new initiative (council plans it)
 /orchestrate                 — Resume active orchestration
-/orchestrate --auto          — Resume with auto-merge enabled
+/orchestrate --auto          — Start or resume with auto mode (council runs non-interactively, PRs auto-merge)
 orchestrate init             — First-time repo setup
 orchestrate update           — Modify an active roadmap
 orchestrate status           — Show progress
@@ -25,7 +27,7 @@ orchestrate abort            — Abort (preserves all work)
 **Disambiguation:**
 - `/orchestrate` alone → resume active orchestration
 - `/orchestrate {text}` → new initiative
-- `/orchestrate --auto` → resume with auto-merge (merges PRs automatically)
+- `/orchestrate --auto` → autonomous mode: `/council --auto` for planning, auto-merge for shipping
 - `/orchestrate update` → interactively modify an active roadmap
 - If `--auto` was set at creation, it persists — bare `/orchestrate` reads it automatically
 
@@ -34,15 +36,16 @@ orchestrate abort            — Abort (preserves all work)
 ## Architecture
 
 ```
-orchestrate (this skill)              q (execution engine)
-┌─────────────────────────────┐      ┌──────────────────┐
-│ SCOPE (optional, broad goals)│      │                  │
-│ PLAN (branch, roadmap, PR)   │      │                  │
-│ BREAKDOWN (per stage) ────────────▶ │ drain loop       │
-│ EXECUTE (wait for q) ◀───────────── │ (worktree tasks) │
-│ VERIFY → ITERATE / ADVANCE  │      │                  │
-│ SHIP (rebase, final PR)     │      │                  │
-└─────────────────────────────┘      └──────────────────┘
+orchestrate (this skill)              council (planning)         q (execution)
+┌─────────────────────────────┐      ┌──────────────────┐      ┌──────────────────┐
+│ SCOPE+PLAN ──────────────────────▶ │ /council {goal}  │      │                  │
+│   (delegates to council)    │ ◀─── │ → reconciled plan│      │                  │
+│ STRUCTURE (branch, roadmap) │      └──────────────────┘      │                  │
+│ BREAKDOWN (per stage) ────────────────────────────────────▶  │ drain loop       │
+│ EXECUTE (wait for q) ◀──────────────────────────────────────  │ (worktree tasks) │
+│ VERIFY → ITERATE / ADVANCE │      │                  │      │                  │
+│ SHIP (rebase, final PR)    │      │                  │      │                  │
+└─────────────────────────────┘      └──────────────────┘      └──────────────────┘
 ```
 
 **Terminal model:** T1 runs `/orchestrate`, T2-T4 run `/q`. Workers stay alive across stages and epics via relay events.
@@ -96,35 +99,38 @@ setTimeout(() => s.destroy(), 500);
 
 ---
 
-## Phase 0: SCOPE (conditional)
+## Phase 0+1: PLAN (via `/council`)
 
-**Only for broad/ambiguous goals.** Skip for narrow technical goals (e.g., "add dark mode toggle" → straight to PLAN).
+Planning is **fully delegated** to `/council`. Orchestrate never scopes or plans in isolation.
 
-**Heuristic:** If the goal names specific files, patterns, or a single feature → skip. If it's abstract ("build a dashboard", "redesign the auth system") → scope it.
+### Flow
 
-1. Restate the goal in one sentence.
-2. Ask clarifying questions, 2-3 at a time (~10 total). Categories: users, scope, functional requirements, technical constraints, design, integrations.
-3. Synthesize into a structured summary. Ask for confirmation.
-4. Confirmed → proceed to PLAN. The summary becomes the roadmap Overview section.
+1. **Invoke council:**
+   - Standard: `/council {goal}` — enters plan mode, presents plan to user, user resolves any open tensions
+   - Auto: `/council {goal} --auto` — runs non-interactively, all tensions auto-resolved, plan returned immediately
 
----
+2. **Council output:** A reconciled plan with numbered steps, key decisions, and risk summary. This becomes the basis for the roadmap.
 
-## Phase 1: PLAN
+3. **If council surfaces open tensions (standard mode):** User resolves them interactively during the council phase. By the time council completes, the plan is fully resolved.
 
-1. **Research the codebase.** Understand structure, patterns, tech landscape.
+4. **Convert council plan → roadmap structure:**
+   - Generate a slug (short, kebab-case)
+   - Map council plan steps → stages with acceptance criteria
+   - Council's key decisions → Overview section
+   - Council's risk summary → preserved in roadmap metadata
 
-2. **Generate a slug.** Short, kebab-case (e.g., `dark-mode`, `auth-redesign`).
+### After council completes
 
-3. **Create the epic branch:**
+5. **Create the epic branch:**
    ```bash
    git checkout main && git pull origin main
    git checkout -b epic/{slug}
    git push -u origin epic/{slug}
    ```
 
-4. **Feature flag (optional).** If `config/flags.ts` exists, add a flag for the new feature (default `false`, overrides `{dev: true, staging: true}`). If no flags file → skip entirely.
+6. **Feature flag (optional).** If `config/flags.ts` exists, add a flag for the new feature (default `false`, overrides `{dev: true, staging: true}`). If no flags file → skip entirely.
 
-5. **Write the roadmap** at `.ai-orchestrate/roadmaps/{slug}.md`:
+7. **Write the roadmap** at `.ai-orchestrate/roadmaps/{slug}.md`:
 
    ```markdown
    ---
@@ -135,14 +141,15 @@ setTimeout(() => s.destroy(), 500);
    # {Title}
 
    ## Overview
-   {Goals, scope, key decisions — from SCOPE phase or inline for narrow goals}
+   {From council plan — goals, scope, key decisions}
 
    ## Metadata
    - **Epic branch:** epic/{slug}
-   - **PR:** #{N} (filled after step 6)
+   - **PR:** #{N} (filled after step 8)
    - **Created:** YYYY-MM-DD
-   - **Auto-merge:** false
+   - **Auto-merge:** {true if --auto, false otherwise}
    - **Integrations:** {from config.yml or "none"}
+   - **Risk summary:** {from council}
 
    ## Stage 1: {title}
    **Branch prefix:** feat|fix|chore|docs
@@ -154,9 +161,9 @@ setTimeout(() => s.destroy(), 500);
    ...
    ```
 
-6. **Load integrations** (see Integrations section). If configured: create tracking ticket, add it to project board in Planning status, create draft PR linking to roadmap. If none: just create the draft PR with `gh pr create --draft` (git is always available).
+8. **Load integrations** (see Integrations section). If configured: create tracking ticket, add it to project board in Planning status, create draft PR linking to roadmap. If none: just create the draft PR with `gh pr create --draft` (git is always available).
 
-7. **Commit roadmap to main:**
+9. **Commit roadmap to main:**
    ```bash
    git checkout main
    git add .ai-orchestrate/roadmaps/{slug}.md
@@ -165,23 +172,23 @@ setTimeout(() => s.destroy(), 500);
    git checkout epic/{slug}
    ```
 
-8. **Orchestrator state file** — write `.ai-queue/.orchestrator-state.json`:
-   ```json
-   {
-     "role": "orchestrator",
-     "pid": $PPID,
-     "epic": {
-       "roadmap": ".ai-orchestrate/roadmaps/{slug}.md",
-       "currentStage": 1,
-       "returnTo": "breakdown"
-     }
-   }
-   ```
-   This enables post-`/clear` recovery. Always include a `saga` field when running multi-epic mode.
+10. **Orchestrator state file** — write `.ai-queue/.orchestrator-state.json`:
+    ```json
+    {
+      "role": "orchestrator",
+      "pid": $PPID,
+      "epic": {
+        "roadmap": ".ai-orchestrate/roadmaps/{slug}.md",
+        "currentStage": 1,
+        "returnTo": "breakdown"
+      }
+    }
+    ```
+    This enables post-`/clear` recovery. Always include a `saga` field when running multi-epic mode.
 
-9. **Ensure relay is running.** Start if needed (see Relay section).
+11. **Ensure relay is running.** Start if needed (see Relay section).
 
-10. **Present summary** and proceed to BREAKDOWN for Stage 1.
+12. **Present summary** and proceed to BREAKDOWN for Stage 1.
 
 ---
 
@@ -327,6 +334,14 @@ Enter the wait loop. Workers (`/q`) claim and execute tasks.
 
 For broad goals that decompose into multiple epics. Same roadmap file, epics grouped as top-level sections.
 
+### Planning (multi-epic)
+
+Council is invoked once for the full initiative. The reconciled plan identifies natural epic boundaries. Orchestrate converts these into the multi-epic roadmap format.
+
+For each epic, council may be re-invoked for detailed stage planning if the epic scope warrants it:
+- Simple epic (1-2 stages) → orchestrate derives stages directly from the council plan
+- Complex epic (3+ stages) → `/council "Detail stages for epic: {title}" --auto` (always `--auto` for sub-planning, even in standard mode)
+
 ### Roadmap format (multi-epic)
 
 ```markdown
@@ -338,7 +353,7 @@ created: YYYY-MM-DD
 # {Title}
 
 ## Overview
-{Goals, scope, key decisions from SCOPE phase}
+{Goals, scope, key decisions from council plan}
 
 ## Metadata
 - **Created:** YYYY-MM-DD
@@ -403,7 +418,7 @@ created: YYYY-MM-DD
 # {Title}
 
 ## Overview
-{Goals, scope, key decisions}
+{Goals, scope, key decisions — from council plan}
 
 ## Metadata
 - **Epic branch:** epic/{slug}
@@ -515,9 +530,11 @@ Interactively modify an active roadmap with safe guards and integration side-eff
 
 2. **No state file?** Scan `.ai-orchestrate/roadmaps/` for `status: in-progress`. If none → "No active orchestration. Use `/orchestrate {goal}` to start one."
 
-3. **Ensure relay running.** Determine current state from roadmap/state file.
+3. **Read `Auto-merge` from roadmap metadata.** If `true`, behave as if `--auto` was passed (auto-merge enabled).
 
-4. **Enter the appropriate phase** and continue the lifecycle loop.
+4. **Ensure relay running.** Determine current state from roadmap/state file.
+
+5. **Enter the appropriate phase** and continue the lifecycle loop.
 
 ---
 
