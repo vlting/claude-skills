@@ -287,9 +287,9 @@ Enter the wait loop. Workers (`/q`) claim and execute tasks.
    gh pr merge --merge --delete-branch
    ```
 
-3. **Update epic PR body:** Check off the completed stage and link the stage PR. If integration: use `update-epic-pr` action (see Integrations). This keeps the epic PR as a living summary of progress.
+3. **Update epic PR body (REQUIRED):** Check off the completed stage and link the stage PR number. Use `update-epic-pr` integration action. This keeps the epic PR as a living progress summary.
 
-4. **Update epic issue body:** Check off the completed stage checkbox. If integration: use `update-epic-issue` action.
+4. **Update epic issue body (REQUIRED):** Check off the completed stage checkbox and link the stage PR number. Use `update-epic-issue` integration action.
 
 5. **Update roadmap:** Mark stage done (all acceptance criteria should already be `- [x]` from VERIFY). If integration: close sub-ticket, move board status to Done. **Epic/saga tickets go directly from Planning → Done at SHIP. NEVER move them to Todo, In Progress, or In Review.**
 
@@ -314,7 +314,11 @@ Enter the wait loop. Workers (`/q`) claim and execute tasks.
 
 4. **Auto-merge (if enabled):** Wait for CI (`gh pr checks` every 15s, timeout 10min). If green → `gh pr merge --merge --delete-branch`. On conflict → rebase + resolve + retry once. On failure → notify, fall back to manual.
 
-5. **Cleanup:**
+5. **Update saga tracking (multi-epic only):**
+   - Use `update-saga-issue` action: check off the completed epic checkbox in the saga issue body, linking the epic PR
+   - This keeps the saga issue as a living progress summary across epics
+
+6. **Cleanup:**
    - Archive roadmap: move to `.ai-orchestrate/archive/`
    - Delete orchestrator state file
    - If integration: close tracking ticket, move board status directly from Planning → Done (see `move-to-done` in integration docs). **Epic/saga tickets skip Todo/In Progress/In Review entirely.**
@@ -324,7 +328,7 @@ Enter the wait loop. Workers (`/q`) claim and execute tasks.
    - Call relay smart stop
    - Commit archive to main
 
-6. **Print summary:**
+7. **Print summary:**
    ```
    --- Shipped: {title} ---
    PR: #{N} — ready for review (or merged if auto-merge)

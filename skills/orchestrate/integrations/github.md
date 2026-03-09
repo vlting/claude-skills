@@ -119,6 +119,21 @@ They NEVER go in Todo, In Progress, or In Review. Even while actively being work
 
 **Stage sub-issues** move through all columns: Todo → In Progress → In Review → Done.
 
+## update-saga-issue
+
+After completing an epic (SHIP phase), check off the epic checkbox in the saga issue body.
+
+```bash
+# Get current saga issue body
+BODY=$(gh issue view {saga_issue_number} --repo OWNER/REPO --json body --jq '.body')
+
+# Replace "- [ ] Epic N: {title}" with "- [x] Epic N: {title} (#{epic_pr_number})"
+UPDATED=$(echo "$BODY" | sed 's/- \[ \] Epic {N}: {epic_title_pattern}/- [x] Epic {N}: {epic_title_pattern} (#'"{epic_pr_number}"')/')
+
+# Update the saga issue body
+gh issue edit {saga_issue_number} --repo OWNER/REPO --body "$UPDATED"
+```
+
 ## Owner vs Contributor mode
 
 - **Owner:** Full CRUD on issues, labels, board.
