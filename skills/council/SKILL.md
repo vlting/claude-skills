@@ -204,20 +204,21 @@ Output the reconciled plan in this format:
 ## Full Execution Flow (copy-paste reference)
 
 ```
-1. Parse invocation → extract {task}, {personas}
-2. If no --personas → auto-select 4-7 using heuristic
-3. EXPLORE
+1. Enter plan mode (EnterPlanMode tool) — council is a planning-only skill, never edits code
+2. Parse invocation → extract {task}, {personas}
+3. If no --personas → auto-select 4-7 using heuristic
+4. EXPLORE
    └─ 1× Explore agent (very thorough) → context brief
-4. DELIBERATE
+5. DELIBERATE
    └─ Persona Plan agents in batches of 3
       └─ Each gets: persona identity + context brief + task
       └─ Each outputs: proposal, risks, non-negotiables, concessions, confidence
-5. RECONCILE (direct synthesis, no agent)
+6. RECONCILE (direct synthesis, no agent)
    └─ Agreements (3+ align) → foundation
    └─ Cherry-picks (unique + unchallenged) → adopt
    └─ Compromises (conflicts) → resolve via concessions + confidence + domain weight
    └─ Open tensions → present both sides + recommend default
-6. PRESENT
+7. PRESENT
    └─ One coherent plan (not a comparison table)
    └─ Open tensions → ask user to resolve
    └─ Ready → suggest /orchestrate or /q handoff
@@ -249,10 +250,11 @@ Output the reconciled plan in this format:
 
 ## Rules
 
-1. **Personas are independent** — they never see each other's output during DELIBERATE
-2. **Reconciliation synthesizes** — it produces ONE plan, not a comparison table
-3. **Concessions make reconciliation tractable** — without them, every conflict is a deadlock
-4. **Confidence is honest** — a persona rating 2/5 is signaling "I'm not sure, defer to others"
-5. **Open tensions are real** — don't force a resolution; some trade-offs need human judgment
-6. **Minimum 4 personas** — fewer than 4 doesn't justify the council overhead; just plan directly
-7. **pragma + maint always present** — unless explicitly excluded via `--personas`
+1. **Plan mode enforced** — call `EnterPlanMode` as the very first action; council never edits code or files
+2. **Personas are independent** — they never see each other's output during DELIBERATE
+3. **Reconciliation synthesizes** — it produces ONE plan, not a comparison table
+4. **Concessions make reconciliation tractable** — without them, every conflict is a deadlock
+5. **Confidence is honest** — a persona rating 2/5 is signaling "I'm not sure, defer to others"
+6. **Open tensions are real** — don't force a resolution; some trade-offs need human judgment
+7. **Minimum 4 personas** — fewer than 4 doesn't justify the council overhead; just plan directly
+8. **pragma + maint always present** — unless explicitly excluded via `--personas`
