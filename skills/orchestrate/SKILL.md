@@ -250,10 +250,10 @@ Enter the wait loop. Workers (`/q`) claim and execute tasks.
    - `npm run build` (or project equivalent)
    - `npm run lint`
    - `npm test`
-   - Check each acceptance criterion from the roadmap stage.
+   - Check each acceptance criterion from the roadmap stage. **Check off (`- [x]`) each criterion that passes** in the roadmap file.
 3. **Result:**
    - All pass → ADVANCE
-   - Failures → ITERATE
+   - Failures → ITERATE (already-checked criteria stay checked)
 
 ---
 
@@ -280,7 +280,7 @@ Enter the wait loop. Workers (`/q`) claim and execute tasks.
    gh pr merge --merge --delete-branch
    ```
 
-3. **Update roadmap:** Mark stage done. If integration: close sub-ticket, move board status to Done. Do NOT move the parent epic/saga — they stay in Planning until SHIP.
+3. **Update roadmap:** Mark stage done (all acceptance criteria should already be `- [x]` from VERIFY). If integration: close sub-ticket, move board status to Done. **Epic/saga tickets go directly from Planning → Done at SHIP. NEVER move them to Todo, In Progress, or In Review.**
 
 4. **More stages?** → BREAKDOWN for next stage.
    **All stages done?** → SHIP.
@@ -306,9 +306,9 @@ Enter the wait loop. Workers (`/q`) claim and execute tasks.
 5. **Cleanup:**
    - Archive roadmap: move to `.ai-orchestrate/archive/`
    - Delete orchestrator state file
-   - If integration: close tracking ticket, move board status to Done (see `move-to-done` in integration docs)
-     - For multi-epic: move the individual epic issue to Done on the board
-     - After final epic: also move the saga issue to Done on the board
+   - If integration: close tracking ticket, move board status directly from Planning → Done (see `move-to-done` in integration docs). **Epic/saga tickets skip Todo/In Progress/In Review entirely.**
+     - For multi-epic: move the individual epic issue from Planning → Done on the board
+     - After final epic: also move the saga issue from Planning → Done on the board
    - Send `epic-done` via relay (workers exit)
    - Call relay smart stop
    - Commit archive to main
