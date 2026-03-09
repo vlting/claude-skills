@@ -39,6 +39,36 @@ gh pr create --draft \
 "
 ```
 
+## update-epic-pr
+
+After merging a stage PR, update the epic PR body to check off the stage and link the merged stage PR.
+
+```bash
+# Get current epic PR body
+BODY=$(gh pr view {epic_pr_number} --repo OWNER/REPO --json body --jq '.body')
+
+# Replace "- [ ] Stage N: {title}" with "- [x] Stage N: {title} (#stage_pr_number)"
+UPDATED=$(echo "$BODY" | sed 's/- \[ \] Stage {N}: {title}/- [x] Stage {N}: {title} (#'"{stage_pr_number}"')/')
+
+# Update the PR body
+gh pr edit {epic_pr_number} --repo OWNER/REPO --body "$UPDATED"
+```
+
+## update-epic-issue
+
+After merging a stage PR, check off the stage checkbox in the epic issue body.
+
+```bash
+# Get current issue body
+BODY=$(gh issue view {epic_issue_number} --repo OWNER/REPO --json body --jq '.body')
+
+# Replace "- [ ] Stage N.M: {title}" with "- [x] Stage N.M: {title} (#stage_pr_number)"
+UPDATED=$(echo "$BODY" | sed 's/- \[ \] Stage {N\.M}: {title}/- [x] Stage {N\.M}: {title} (#'"{stage_pr_number}"')/')
+
+# Update the issue body
+gh issue edit {epic_issue_number} --repo OWNER/REPO --body "$UPDATED"
+```
+
 ## link-ticket
 
 Use `Closes #{N}` in stage PR body to auto-close sub-issues on merge.

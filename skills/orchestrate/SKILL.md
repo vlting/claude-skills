@@ -287,12 +287,16 @@ Enter the wait loop. Workers (`/q`) claim and execute tasks.
    gh pr merge --merge --delete-branch
    ```
 
-3. **Update roadmap:** Mark stage done (all acceptance criteria should already be `- [x]` from VERIFY). If integration: close sub-ticket, move board status to Done. **Epic/saga tickets go directly from Planning → Done at SHIP. NEVER move them to Todo, In Progress, or In Review.**
+3. **Update epic PR body:** Check off the completed stage and link the stage PR. If integration: use `update-epic-pr` action (see Integrations). This keeps the epic PR as a living summary of progress.
 
-4. **More stages?** → BREAKDOWN for next stage.
+4. **Update epic issue body:** Check off the completed stage checkbox. If integration: use `update-epic-issue` action.
+
+5. **Update roadmap:** Mark stage done (all acceptance criteria should already be `- [x]` from VERIFY). If integration: close sub-ticket, move board status to Done. **Epic/saga tickets go directly from Planning → Done at SHIP. NEVER move them to Todo, In Progress, or In Review.**
+
+6. **More stages?** → BREAKDOWN for next stage.
    **All stages done?** → SHIP.
 
-5. **Update state file** for next stage or ship phase.
+7. **Update state file** for next stage or ship phase.
 
 ---
 
