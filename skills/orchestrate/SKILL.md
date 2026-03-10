@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 1.1.0
+  version: 1.2.0
 ---
 
 # Orchestrate
@@ -18,6 +18,7 @@ All planning is done via `/council` — orchestrate never plans in isolation.
 /orchestrate {goal}          — Start new initiative (council plans it)
 /orchestrate                 — Resume active orchestration
 /orchestrate --auto          — Start or resume with auto mode (council runs non-interactively, PRs auto-merge)
+/orchestrate --watch         — Autonomous orchestrator loop: monitor workers, drive lifecycle (implies --auto)
 orchestrate init             — First-time repo setup
 orchestrate update           — Modify an active roadmap
 orchestrate status           — Show progress
@@ -28,8 +29,10 @@ orchestrate abort            — Abort (preserves all work)
 - `/orchestrate` alone → resume active orchestration
 - `/orchestrate {text}` → new initiative
 - `/orchestrate --auto` → autonomous mode: `/council --auto` for planning, auto-merge for shipping
+- `/orchestrate --watch` → autonomous orchestrator loop (implies `--auto`); stays in orchestrator role, polls for task completion, drives full lifecycle
+- `/orchestrate --watch {text}` → new initiative in watch mode
 - `/orchestrate update` → interactively modify an active roadmap
-- If `--auto` was set at creation, it persists — bare `/orchestrate` reads it automatically
+- If `--auto` or `--watch` was set at creation, it persists — bare `/orchestrate` reads it automatically
 
 ---
 
@@ -48,7 +51,7 @@ orchestrate (this skill)              council (planning)         q (execution)
 └─────────────────────────────┘      └──────────────────┘      └──────────────────┘
 ```
 
-**Terminal model:** T1 runs `/orchestrate`, T2-T4 run `/q`. Workers stay alive across stages and epics via relay events.
+**Terminal model:** T1 runs `/orchestrate` (or `/orchestrate --watch`), T2-T4 run `/q`. Workers stay alive across stages and epics via relay events.
 
 **File layout:**
 ```
@@ -60,6 +63,76 @@ orchestrate (this skill)              council (planning)         q (execution)
 .ai-queue/                  ← task files (gitignored)
 .ai-relay/                  ← relay runtime (gitignored)
 ```
+
+---
+
+## Watch Mode (`--watch`)
+
+Autonomous orchestrator loop. The orchestrator stays active, monitors `/q` worker task completion, and drives the full lifecycle without manual intervention. **Always implies `--auto`.**
+
+**CRITICAL:** In watch mode, the orchestrator NEVER acts as a `/q` worker. It ONLY orchestrates — task execution is handled by separate `/q` agents in other terminals.
+
+### Poll Loop (replaces Phase 3: EXECUTE)
+
+When watch mode is active, Phase 3 becomes an active poll-and-advance loop instead of a passive wait:
+
+```
+target_branch = current stage's target branch
+total = count of task files written for this stage
+
+while true:
+  pending = ls .ai-queue/*.md | grep target_branch | wc -l
+  completed = ls .ai-queue/_completed/*.md | grep target_branch | wc -l
+
+  print "[watch] Stage {N}: {completed}/{total} tasks complete"
+
+  if pending == 0 and completed >= total:
+    git checkout {target_branch} && git pull origin {target_branch}
+    verify commits landed (git log --oneline -10)
+    check for open PRs from workers (gh pr list --head {target_branch})
+    break → proceed to VERIFY
+
+  sleep 30s
+```
+
+**Matching tasks to stages:** Task files contain `<!-- target-branch: {branch} -->`. The orchestrator matches this against the current stage's branch to determine which tasks belong to the current stage.
+
+### Full Autonomous Cycle
+
+Once the poll loop detects stage completion, watch mode drives the entire remaining lifecycle automatically:
+
+1. **VERIFY** — run build/lint/test, check acceptance criteria
+2. **ITERATE** (if needed) — write fix tasks, send `work-queued`, return to poll loop
+3. **ADVANCE** — create stage PR, merge, update roadmap
+4. **BREAKDOWN** (next stage) — create branch, write tasks, send `work-queued`, return to poll loop
+5. **SHIP** (epic complete) — rebase, merge epic PR, archive
+6. **Next epic** (multi-epic) — create branch, BREAKDOWN, poll loop
+7. **Final SHIP** — archive roadmap, cleanup, print summary
+
+No pauses between stages or epics. The orchestrator drives continuously until the saga/epic is fully shipped or hits an error/iteration limit.
+
+### State File
+
+When `--watch` is active, the state file includes `"watch": true`:
+```json
+{
+  "role": "orchestrator",
+  "watch": true,
+  "saga": { ... },
+  "epic": { ... }
+}
+```
+
+This persists across `/clear` — bare `/orchestrate` reads `watch: true` and resumes in watch mode automatically.
+
+### Roadmap Metadata
+
+When `--watch` is set at creation, the roadmap metadata includes:
+```markdown
+- **Watch:** true
+```
+
+This is the durable source of truth (survives state file deletion).
 
 ---
 
@@ -244,8 +317,8 @@ integrations: [github]   # or: [] or omit entirely
 
 Enter the wait loop. Workers (`/q`) claim and execute tasks.
 
-- With relay: block on socket events (`task-completed`, `worker-disconnected`).
-- Monitor progress: check `.ai-queue/` for remaining pending/active files.
+- **Watch mode (`--watch`):** Use the active poll loop described in the Watch Mode section. The orchestrator polls every 30s, verifies git/GitHub state, and auto-advances.
+- **Standard mode:** With relay: block on socket events (`task-completed`, `worker-disconnected`). Monitor progress: check `.ai-queue/` for remaining pending/active files.
 - When all tasks for this stage are in `_completed/` → proceed to VERIFY.
 
 ---
@@ -538,11 +611,11 @@ Interactively modify an active roadmap with safe guards and integration side-eff
 
 2. **No state file?** Scan `.ai-orchestrate/roadmaps/` for `status: in-progress`. If none → "No active orchestration. Use `/orchestrate {goal}` to start one."
 
-3. **Read `Auto-merge` from roadmap metadata.** If `true`, behave as if `--auto` was passed (auto-merge enabled).
+3. **Read `Auto-merge` and `Watch` from roadmap metadata.** If `Auto-merge: true`, behave as if `--auto` was passed. If `Watch: true` (or state file has `"watch": true`), resume in watch mode (implies `--auto`).
 
 4. **Ensure relay running.** Determine current state from roadmap/state file.
 
-5. **Enter the appropriate phase** and continue the lifecycle loop.
+5. **Enter the appropriate phase** and continue the lifecycle loop. If watch mode, use the active poll loop for EXECUTE phases.
 
 ---
 
