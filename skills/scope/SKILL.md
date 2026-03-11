@@ -14,7 +14,7 @@ Interactive, approval-gated planning and orchestration. Every unit of work is re
 
 ```
 /scope {goal}          — start new initiative
-/scope                 — resume current initiative
+/scope                 — resume active initiative; if none, read SCOPE.md from repo root
 /scope status          — show hierarchy dashboard
 /scope update          — modify an active roadmap
 /scope abort           — abort (preserves all work)
@@ -491,13 +491,17 @@ Interactively modify an active roadmap.
 
 ---
 
-## `/scope` (resume)
+## `/scope` (resume / SCOPE.md)
 
 1. Scan `.ai-plans/` for roadmaps with `status` not `done` or `aborted`
-2. If multiple → `AskUserQuestion` which to resume
-3. Read roadmap YAML frontmatter → determine current phase
-4. Re-enter the flow at the correct gate
-5. Ensure relay is running
+2. **Active roadmap(s) found:**
+   - If one → resume: read YAML frontmatter → determine current phase → re-enter flow at correct gate
+   - If multiple → `AskUserQuestion` which to resume
+   - If `SCOPE.md` also exists at repo root → `AskUserQuestion`: resume active initiative or start new one from `SCOPE.md`?
+3. **No active roadmap:** Check for `SCOPE.md` at repo root
+   - Found → read contents, use as goal, enter Phase 1 (SCOPE)
+   - Not found → "No active initiative. Run `/scope {goal}` or create a `SCOPE.md` at repo root."
+4. Ensure relay is running
 
 ---
 
