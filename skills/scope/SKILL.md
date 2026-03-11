@@ -14,7 +14,7 @@ Interactive, approval-gated planning and orchestration. Every unit of work is re
 
 ```
 /scope {goal}          — start new initiative
-/scope                 — resume active initiative; if none, read SCOPE.md from repo root
+/scope                 — resume active initiative; if none, read SCOPE.md (non-empty) from repo root
 /scope status          — show hierarchy dashboard
 /scope update          — modify an active roadmap
 /scope abort           — abort (preserves all work)
@@ -493,15 +493,21 @@ Interactively modify an active roadmap.
 
 ## `/scope` (resume / SCOPE.md)
 
+`SCOPE.md` at repo root is the user's scratch pad for defining new initiatives. **Empty `SCOPE.md` = no pending scope** (equivalent to the file not existing). Never delete `SCOPE.md` — only empty it.
+
 1. Scan `.ai-plans/` for roadmaps with `status` not `done` or `aborted`
 2. **Active roadmap(s) found:**
    - If one → resume: read YAML frontmatter → determine current phase → re-enter flow at correct gate
    - If multiple → `AskUserQuestion` which to resume
-   - If `SCOPE.md` also exists at repo root → `AskUserQuestion`: resume active initiative or start new one from `SCOPE.md`?
-3. **No active roadmap:** Check for `SCOPE.md` at repo root
-   - Found → read contents, use as goal, enter Phase 1 (SCOPE)
-   - Not found → "No active initiative. Run `/scope {goal}` or create a `SCOPE.md` at repo root."
+   - If `SCOPE.md` has content → `AskUserQuestion`: resume active initiative or start new one from `SCOPE.md`?
+3. **No active roadmap:** Check `SCOPE.md` at repo root
+   - Has content → read contents, use as goal, enter Phase 1 (SCOPE)
+   - Empty or missing → "No active initiative. Run `/scope {goal}` or write your goal in `SCOPE.md`."
 4. Ensure relay is running
+
+### SCOPE.md lifecycle
+
+Once `/scope` reads `SCOPE.md` and creates the roadmap (Phase 1 approval + roadmap written), **empty the file** (write empty string). The goal now lives in the roadmap — `SCOPE.md` is free for the next initiative.
 
 ---
 
