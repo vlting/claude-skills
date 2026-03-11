@@ -9,7 +9,7 @@ Requires: `gh` CLI authenticated.
 gh issue create --repo OWNER/REPO \
   --title "{type}: {title}" \
   --label "{type}" \
-  --body "Roadmap: \`.ai-orchestrate/roadmaps/{slug}.md\`"
+  --body "Roadmap: \`.ai-plans/{slug}/roadmap.md\`"
 
 # Stage sub-issue
 gh issue create --repo OWNER/REPO \
@@ -31,7 +31,7 @@ done
 gh pr create --draft \
   --title "{title}" \
   --base main --head epic/{slug} \
-  --body "Roadmap: \`.ai-orchestrate/roadmaps/{slug}.md\`
+  --body "Roadmap: \`.ai-plans/{slug}/roadmap.md\`
 
 ## Stages
 - [ ] Stage 1: {title}
@@ -97,9 +97,6 @@ gh project item-edit --project-id "$PROJECT_NODE_ID" --id "$ITEM_ID" \
 Shorthand for moving an issue to Done on the project board. Used in ADVANCE (stage sub-tickets) and SHIP (epic/saga tickets).
 
 ```bash
-# Move issue to Done on project board
-# Requires: PROJECT_NUMBER, OWNER, PROJECT_NODE_ID, STATUS_FIELD_ID, DONE_OPTION_ID
-# All values from config.yml / roadmap metadata
 ITEM_ID=$(gh project item-add $PROJECT_NUMBER --owner OWNER --url "$ISSUE_URL" --format json | jq -r '.id')
 gh project item-edit --project-id "$PROJECT_NODE_ID" --id "$ITEM_ID" \
   --field-id "$STATUS_FIELD_ID" --single-select-option-id "$DONE_OPTION_ID"
@@ -134,12 +131,9 @@ UPDATED=$(echo "$BODY" | sed 's/- \[ \] Epic {N}: {epic_title_pattern}/- [x] Epi
 gh issue edit {saga_issue_number} --repo OWNER/REPO --body "$UPDATED"
 ```
 
-## Owner vs Contributor mode
+## Configuration
 
-- **Owner:** Full CRUD on issues, labels, board.
-- **Contributor:** Skip issue creation. Link to existing issues via user-provided IDs. Comment-only.
-
-Configured during `orchestrate init`. Stored in `.ai-orchestrate/config.yml`:
+Stored in `.ai-plans/config.yml`:
 ```yaml
 integrations: [github]
 github:
@@ -148,3 +142,7 @@ github:
   mode: owner  # or: contributor
   project_number: 2  # optional
 ```
+
+**Owner vs Contributor:**
+- **Owner:** Full CRUD on issues, labels, board.
+- **Contributor:** Skip issue creation. Link to existing issues via user-provided IDs. Comment-only.

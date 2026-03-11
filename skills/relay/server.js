@@ -4,16 +4,16 @@
 const net = require('net');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
-// Configuration — relay dir passed as first arg, defaults to .ai-relay in cwd
-const RELAY_DIR = process.argv[2] || path.join(process.cwd(), '.ai-relay');
-const SOCKET_PATH = path.join(RELAY_DIR, 'relay.sock');
-const PID_PATH = path.join(RELAY_DIR, 'relay.pid');
+// Fixed paths — one relay per machine
+const SOCKET_PATH = path.join(process.env.HOME, '.claude', 'relay.sock');
+const PID_PATH = path.join(process.env.HOME, '.claude', 'relay.pid');
 
-// Ensure relay directory exists
-fs.mkdirSync(RELAY_DIR, { recursive: true });
+// Ensure parent directory exists
+fs.mkdirSync(path.dirname(SOCKET_PATH), { recursive: true });
 
-// Remove stale socket file (server is not running — caller verified PID before starting us)
+// Remove stale socket file (caller verified PID before starting us)
 if (fs.existsSync(SOCKET_PATH)) {
   fs.unlinkSync(SOCKET_PATH);
 }
@@ -21,8 +21,10 @@ if (fs.existsSync(SOCKET_PATH)) {
 // ---------------------------------------------------------------------------
 // Client tracking
 // ---------------------------------------------------------------------------
-const clients = new Map(); // socket → { role, pid, tasks: Set, connectedAt }
-const knownAgents = new Map(); // pid → { role, lastSeen } — survives disconnects
+const clients = new Map(); // socket → { pid, tasks: Set, connectedAt }
+
+// Claim map: composite key "taskSlug:ctime" → workerPid
+const claims = new Map();
 
 function broadcast(msg, exclude) {
   const data = JSON.stringify(msg) + '\n';
@@ -45,36 +47,40 @@ function send(sock, msg) {
 function handleMessage(socket, info, msg) {
   switch (msg.type) {
     case 'identify': {
-      // Enforce single orchestrator
-      if (msg.role === 'orchestrator') {
-        for (const [, existing] of clients) {
-          if (existing.role === 'orchestrator' && existing !== info) {
-            send(socket, { type: 'role-taken', active_pid: existing.pid });
-            return;
-          }
-        }
-      }
-      info.role = msg.role;
       info.pid = msg.pid;
-      // Track this agent across transient connections
-      if (msg.pid) {
-        knownAgents.set(msg.pid, { role: msg.role, lastSeen: new Date().toISOString() });
-      }
-      // Send current state to the newly identified client
       send(socket, {
         type: 'state',
-        orchestrator: [...clients.values()].some(c => c.role === 'orchestrator'),
-        workers: [...clients.values()].filter(c => c.role === 'worker').length,
+        workers: [...clients.values()].filter(c => c.pid).length,
       });
       break;
     }
 
+    case 'claim': {
+      // msg.key = "taskSlug:ctime" — composite key for uniqueness
+      const key = msg.key;
+      if (claims.has(key)) {
+        send(socket, { type: 'claim-denied', key, holder: claims.get(key) });
+      } else {
+        claims.set(key, info.pid);
+        send(socket, { type: 'claim-granted', key });
+        broadcast({
+          type: 'event',
+          event: 'task-claimed',
+          worker: info.pid,
+          key,
+        }, socket);
+      }
+      break;
+    }
+
     case 'event': {
-      // Track task ownership on the server side
-      if (msg.event === 'task-claimed' && msg.task) {
-        info.tasks.add(msg.task);
-      } else if (msg.event === 'task-completed' && msg.task) {
-        info.tasks.delete(msg.task);
+      // Clear claim on task completion
+      if (msg.event === 'task-completed' && msg.key) {
+        claims.delete(msg.key);
+        info.tasks.delete(msg.key);
+      }
+      if (msg.event === 'task-claimed' && msg.key) {
+        info.tasks.add(msg.key);
       }
       // Broadcast to all other clients
       broadcast(msg, socket);
@@ -85,12 +91,11 @@ function handleMessage(socket, info, msg) {
       send(socket, {
         type: 'status-response',
         clients: [...clients.values()].map(c => ({
-          role: c.role,
           pid: c.pid,
           tasks: [...c.tasks],
           connectedAt: c.connectedAt,
         })),
-        liveAgents: liveAgentCount(),
+        claims: Object.fromEntries(claims),
         uptime: process.uptime(),
       });
       break;
@@ -103,7 +108,6 @@ function handleMessage(socket, info, msg) {
 // ---------------------------------------------------------------------------
 const server = net.createServer(socket => {
   const info = {
-    role: 'unknown',
     pid: null,
     tasks: new Set(),
     connectedAt: new Date().toISOString(),
@@ -131,10 +135,10 @@ const server = net.createServer(socket => {
     const disconnected = clients.get(socket);
     clients.delete(socket);
 
-    if (disconnected && disconnected.role !== 'unknown') {
+    if (disconnected && disconnected.pid) {
       broadcast({
         type: 'event',
-        event: `${disconnected.role}-disconnected`,
+        event: 'worker-disconnected',
         pid: disconnected.pid,
         tasks: [...disconnected.tasks],
       });
@@ -157,36 +161,37 @@ function cleanup() {
 }
 
 process.on('exit', cleanup);
-
-// Check if any known agent PIDs are still alive (works across transient connections)
-function liveAgentCount() {
-  let alive = 0;
-  for (const [pid] of knownAgents) {
-    try { process.kill(pid, 0); alive++; } catch { knownAgents.delete(pid); }
-  }
-  return alive;
-}
-
-// SIGTERM: refuse to die if agents are still alive — checks BOTH connected sockets
-// AND known agent PIDs (which persist across transient connections).
-// A second SIGTERM (or SIGINT) forces shutdown regardless.
-let forceNextSignal = false;
-process.on('SIGTERM', () => {
-  const connectedIdentified = [...clients.values()].filter(c => c.role !== 'unknown');
-  const liveAgents = liveAgentCount();
-  const blocking = Math.max(connectedIdentified.length, liveAgents);
-  if (blocking > 0 && !forceNextSignal) {
-    console.log(`relay: SIGTERM ignored — ${connectedIdentified.length} connected client(s), ${liveAgents} known live agent(s). Send again to force.`);
-    forceNextSignal = true;
-    // Reset force flag after 10 seconds so stale double-kills don't accumulate
-    setTimeout(() => { forceNextSignal = false; }, 10000);
-    return;
-  }
-  cleanup();
-  process.exit(0);
-});
-
 process.on('SIGINT', () => { cleanup(); process.exit(0); });
+process.on('SIGTERM', () => { cleanup(); process.exit(0); });
+
+// ---------------------------------------------------------------------------
+// Self-termination via pgrep
+// Poll every ~20s for Claude processes. Exit after two consecutive empty
+// checks (~40s worst case). Handles terminal crashes gracefully.
+// ---------------------------------------------------------------------------
+let emptyChecks = 0;
+
+setInterval(() => {
+  try {
+    const output = execSync('pgrep -f claude', { encoding: 'utf8' }).trim();
+    // Filter out our own PID — relay path contains "claude"
+    const pids = output.split('\n').filter(p => +p !== process.pid);
+    if (pids.length > 0) {
+      emptyChecks = 0;
+    } else {
+      emptyChecks++;
+    }
+  } catch {
+    // pgrep returns non-zero if no matches
+    emptyChecks++;
+  }
+
+  if (emptyChecks >= 2) {
+    console.log('relay: no Claude processes detected for ~40s, self-terminating');
+    cleanup();
+    process.exit(0);
+  }
+}, 20000);
 
 server.listen(SOCKET_PATH, () => {
   console.log(`relay: listening on ${SOCKET_PATH} (pid ${process.pid})`);

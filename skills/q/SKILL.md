@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 13.0.0
+  version: 14.0.0
 ---
 
 # Q
@@ -82,26 +82,44 @@ Before merging a completed task: always `git fetch && git rebase` on the target 
 
 ---
 
+## Relay (Required)
+
+**The relay must be running.** Workers error loudly and refuse to start if the relay is down and cannot be auto-started.
+
+Fixed socket path: `~/.claude/relay.sock`
+
+**Start relay (if not running):**
+```bash
+RELAY_SOCK="$HOME/.claude/relay.sock"
+RELAY_PID="$HOME/.claude/relay.pid"
+if ! ([ -f "$RELAY_PID" ] && kill -0 "$(cat "$RELAY_PID")" 2>/dev/null && [ -S "$RELAY_SOCK" ]); then
+  nohup node ~/.claude/skills/relay/server.js > ~/.claude/relay.log 2>&1 &
+  # Wait up to 2s for relay.sock to appear
+  for i in 1 2 3 4; do [ -S "$RELAY_SOCK" ] && break; sleep 0.5; done
+fi
+```
+
+**If relay still not available after auto-start attempt:**
+```
+ERROR: Relay server is not running and could not be started.
+Cannot proceed without relay — task claiming requires relay coordination.
+Start the relay manually: node ~/.claude/skills/relay/server.js
+```
+**Do NOT silently proceed. Do NOT fall back to file-based claiming.**
+
+---
+
 ## Drain Loop
 
 ### Startup
 
-1. Ensure relay is running:
-   ```bash
-   RELAY_SOCK="$(pwd)/.ai-relay/relay.sock"
-   RELAY_PID_FILE="$(pwd)/.ai-relay/relay.pid"
-   if ! ([ -f "$RELAY_PID_FILE" ] && kill -0 "$(cat "$RELAY_PID_FILE")" 2>/dev/null && [ -S "$RELAY_SOCK" ]); then
-     mkdir -p .ai-relay
-     nohup node ~/.claude/skills/relay/server.js "$(pwd)/.ai-relay" > .ai-relay/relay.log 2>&1 &
-     # Wait up to 2s for relay.sock
-   fi
-   ```
+1. **Start relay** (see Relay section). If relay unavailable → error and exit.
 
-2. Connect to relay as worker:
+2. **Connect to relay as worker:**
    ```bash
    node -e "
    const s = require('net').connect(process.argv[1]);
-   s.write(JSON.stringify({type:'identify',role:'worker',pid:+process.argv[2]})+'\n');
+   s.write(JSON.stringify({type:'identify',pid:+process.argv[2]})+'\n');
    s.on('data', d => { for (const l of d.toString().split('\n').filter(Boolean)) { try { console.log(l); } catch {} } s.destroy(); });
    setTimeout(() => s.destroy(), 2000);
    " "$RELAY_SOCK" "$PPID"
@@ -109,50 +127,57 @@ Before merging a completed task: always `git fetch && git rebase` on the target 
 
 3. Scan for pending tasks.
 
-### Main Loop (NEVER EXIT unless told to)
-
-**CRITICAL: The drain loop runs continuously. After completing a task or waking from idle, ALWAYS loop back to step 1. The ONLY way to exit is receiving an `epic-done` event.**
+### Main Loop
 
 ```
 ┌─→ 1. Scan for pending tasks
-│   2. If found → Claim → Execute → Archive → /clear → loop back to 1
-│   3. If none  → Idle Wait (block up to 9 min) → loop back to 1
-│   4. If epic-done received → EXIT
-└───────────────────────────────────────────────────────────────────┘
+│   2. If found → Claim via relay → Execute → Archive → /clear → loop back to 1
+│   3. If none + no blocked items → EXIT
+│   4. If none + blocked items exist → Block on relay for task-completed → loop back to 1
+│   5. If epic-done received → EXIT
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Scan:**
 1. List `XXX.md` files (pending). Pick lowest number whose dependencies are met.
 2. Also list `XXX-active.md` files. For each, run orphan detection (see Orphan Recovery). If orphaned → recover to pending, then re-scan.
-3. If no claimable task → Idle Wait.
+3. If no claimable task → check for blocked items (tasks with unmet `depends-on`).
+
+**Exit conditions:**
+- Empty queue AND no blocked-dependency items → **exit cleanly**
+- `epic-done` event received → **exit cleanly**
+
+**Blocked wait:**
+If pending tasks exist but all have unmet dependencies, block on relay waiting for `task-completed` events. When received, re-scan — the dependency may now be satisfied.
 
 **Claim → Execute → Archive:**
-1. **Claim (atomic write-then-rename):**
-   - Read `XXX.md` content.
-   - Prepend `<!-- LAT: {ISO timestamp} -->` and `<!-- PID: $PPID -->` headers to the content.
-   - Write the updated content back to `XXX.md`.
-   - Rename `XXX.md` → `XXX-active.md`.
-   - Send `task-claimed` event.
-   All tracking headers must exist in the file **before** the rename. Another worker seeing `XXX-active.md` must always find a PID inside.
+1. **Claim (relay-coordinated):**
+   - Get the task file's creation timestamp: `stat -f %B {file}` (macOS) or `stat -c %W {file}` (Linux)
+   - Send claim to relay:
+     ```bash
+     node -e "
+     const s = require('net').connect(process.argv[1]);
+     s.write(JSON.stringify({type:'claim',key:process.argv[2]})+'\n');
+     s.on('data', d => {
+       for (const l of d.toString().split('\n').filter(Boolean)) {
+         try { const r = JSON.parse(l); console.log(r.type); } catch {}
+       }
+       s.destroy();
+     });
+     setTimeout(() => s.destroy(), 2000);
+     " "$RELAY_SOCK" "{NNN}:{ctime}"
+     ```
+   - If `claim-granted` → proceed with rename:
+     - Read `XXX.md` content
+     - Prepend `<!-- LAT: {ISO timestamp} -->` and `<!-- PID: $PPID -->` headers
+     - Write updated content back to `XXX.md`
+     - Rename `XXX.md` → `XXX-active.md`
+   - If `claim-denied` → skip this task, scan for next
+   - **No file-based fallback.** Relay is the single source of truth for claims.
 2. **Execute:** See Task Execution below.
-3. **Archive:** Move to `_completed/{hash}.md` where hash = commit short SHA. Send `task-completed` event.
+3. **Archive:** Move to `_completed/{hash}.md` where hash = commit short SHA. Send `task-completed` event with key.
 4. **Context clear:** `/clear` between tasks. Each task starts with fresh context.
 5. **Loop back** to scan.
-
-### Exit
-
-- **ONLY** on `epic-done` event → exit drain loop.
-- Print status: tasks completed this session, any errors.
-- Call relay smart stop (last agent out stops the server).
-- **Never exit just because the queue is empty.** Always idle-wait and re-scan.
-
-**!! ROLE BOUNDARY !!**
-Q is execution-only. A `/q` worker:
-- Never runs phases, stages, or lifecycle management
-- Never reads or writes orchestrator state files
-- Never interprets `returnTo` or roadmap status fields
-- Never manages branches beyond its assigned task's target branch
-- If invoked directly (not by an orchestrator), you are a standalone worker — just execute the task
 
 ---
 
@@ -181,19 +206,17 @@ If a worktree exists for the orphaned task, check for uncommitted work. If salva
 
 ---
 
-## Idle Waiting
+## Idle / Blocked Waiting
 
-**IMPORTANT: Idle waiting is NOT exiting. After idle wait completes, ALWAYS loop back to scan for tasks again. This is a 9-minute watch cycle that refreshes indefinitely.**
+When no immediately claimable tasks exist but blocked tasks remain:
 
-When no pending tasks exist:
-
-**With relay (preferred):** Block on socket events for up to 9 minutes. Then re-scan and wait again:
+**Block on relay events:**
 ```bash
 node -e "
 const s = require('net').connect(process.argv[1]);
 const events = new Set(process.argv.slice(3));
 const timeout = setTimeout(() => { console.log('IDLE_TIMEOUT'); s.destroy(); }, +process.argv[2]);
-s.write(JSON.stringify({type:'identify',role:'worker',pid:process.env.PPID||0})+'\n');
+s.write(JSON.stringify({type:'identify',pid:process.env.PPID||0})+'\n');
 s.on('data', d => {
   for (const line of d.toString().split('\n').filter(Boolean)) {
     try {
@@ -206,17 +229,16 @@ s.on('data', d => {
     } catch {}
   }
 });
-" "$RELAY_SOCK" "540000" "work-queued" "epic-done" "worker-disconnected"
+" "$RELAY_SOCK" "540000" "work-queued" "epic-done" "task-completed" "worker-disconnected"
 ```
 
 | Event received | Action |
 |---------------|--------|
-| `work-queued` | **Loop back** — re-scan queue, claim next task |
-| `epic-done` | **Exit** drain loop (the ONLY exit condition) |
-| `worker-disconnected` | Check for orphaned tasks, then **loop back** |
-| `IDLE_TIMEOUT` (9 min) | **Loop back** — re-scan queue (safety net), then idle-wait again |
-
-**Without relay (fallback):** Poll `.ai-queue/` every 15s for new pending files. Never exit — runs indefinitely until `epic-done`.
+| `task-completed` | Re-scan — a dependency may now be met |
+| `work-queued` | Re-scan — new tasks available |
+| `epic-done` | **Exit** drain loop |
+| `worker-disconnected` | Check for orphaned tasks, then re-scan |
+| `IDLE_TIMEOUT` (9 min) | Re-scan (safety net) |
 
 ---
 
@@ -283,24 +305,15 @@ When a worker claims a task:
    git branch -D q-{NNN}
    ```
 
-7. **Archive:** Rename to `_completed/{commit-hash}.md`.
+7. **Archive:** Rename to `_completed/{commit-hash}.md`. Send `task-completed` event with key `{NNN}:{ctime}`.
 
 ---
 
 ## Relay Patterns
 
-**Check running:**
-```bash
-RELAY_SOCK="$(pwd)/.ai-relay/relay.sock"
-RELAY_PID_FILE="$(pwd)/.ai-relay/relay.pid"
-RELAY_RUNNING=false
-if [ -f "$RELAY_PID_FILE" ] && kill -0 "$(cat "$RELAY_PID_FILE")" 2>/dev/null && [ -S "$RELAY_SOCK" ]; then
-  RELAY_RUNNING=true
-fi
-```
-
 **Send event:**
 ```bash
+RELAY_SOCK="$HOME/.claude/relay.sock"
 node -e "
 const s = require('net').connect(process.argv[1]);
 s.write(JSON.stringify({type:'event',event:process.argv[2]})+'\n');
@@ -308,18 +321,10 @@ setTimeout(() => s.destroy(), 500);
 " "$RELAY_SOCK" "{event-name}"
 ```
 
-**Smart stop (on exit):**
-```bash
-# Query status first — only stop if no other agents alive
-RESULT=$(node -e "
-const s = require('net').connect(process.argv[1]);
-s.write(JSON.stringify({type:'status'})+'\n');
-s.on('data', d => {
-  for (const l of d.toString().split('\n').filter(Boolean)) {
-    try { const r = JSON.parse(l); if (r.type==='status-response') { console.log((r.liveAgents||0)<=1?'SAFE':'BLOCKED'); s.destroy(); } } catch {}
-  }
-});
-setTimeout(() => { console.log('TIMEOUT'); s.destroy(); }, 2000);
-" "$RELAY_SOCK")
-[ "$RESULT" = "SAFE" ] && kill "$(cat "$RELAY_PID_FILE")" 2>/dev/null
-```
+**!! ROLE BOUNDARY !!**
+Q is execution-only. A `/q` worker:
+- Never runs phases, stages, or lifecycle management
+- Never reads or writes roadmap files
+- Never interprets roadmap status fields
+- Never manages branches beyond its assigned task's target branch
+- If invoked directly (not by an orchestrator), you are a standalone worker — just execute the task
