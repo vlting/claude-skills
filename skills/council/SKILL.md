@@ -105,7 +105,7 @@ Be thorough. Check tests, types, and usage sites — not just implementations.
 
 ### Phase 2: DELIBERATE
 
-Launch persona Plan agents in **batches of 3** (max parallel). Each persona gets identical context but responds through its unique lens.
+Launch **all** persona Plan agents in parallel (single batch). Each persona gets identical context but responds through its unique lens.
 
 **Agent config:**
 - `subagent_type: "Plan"`
@@ -145,9 +145,7 @@ Rate 1-5 (5 = certain this is right, 1 = speculative).
 One sentence explaining your confidence level.
 ```
 
-**Batching:** If 7 personas → batch 1 (3 agents), batch 2 (3 agents), batch 3 (1 agent). If ≤3 personas → single batch.
-
-**Ordering within batches:** No preference — all run in parallel within a batch. Batches run sequentially (wait for batch N to finish before launching batch N+1).
+**Parallelism:** All selected personas (4-7) launch simultaneously in a single `Agent` tool call batch. No sequential batching — personas are fully independent and never see each other's output.
 
 ---
 
@@ -239,7 +237,7 @@ Output the reconciled plan in this format:
 4. EXPLORE
    └─ 1× Explore agent (very thorough) → context brief
 5. DELIBERATE
-   └─ Persona Plan agents in batches of 3
+   └─ All persona Plan agents launched in parallel (single batch)
       └─ Each gets: persona identity + context brief + task
       └─ Each outputs: proposal, risks, non-negotiables, concessions, confidence
 6. RECONCILE (direct synthesis, no agent)
