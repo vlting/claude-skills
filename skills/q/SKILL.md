@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 15.0.0
+  version: 15.1.0
 ---
 
 # Q
@@ -15,7 +15,6 @@ Two modes: **enqueue** (create a task) or **drain** (execute tasks).
 ```
 /q                — Drain the queue (worker mode — claim and execute tasks)
 q {description}   — Enqueue a task (create an instruction file)
-exit q            — Stop the worker and disconnect from relay
 ```
 
 Flags (enqueue only):
@@ -144,9 +143,8 @@ Start the relay manually: node ~/.claude/skills/relay/server.js
 3. If no claimable task → block on relay (see Idle / Persistent Listening).
 
 **Exit conditions:**
-- User says `exit q` → **exit cleanly**
-- `epic-done` event received → **exit cleanly**
-- User gives any instruction that is NOT `/btw` → **exit cleanly** (the worker yields to the new instruction)
+- User presses **Esc** to interrupt the blocking listener → worker returns to normal conversation flow
+- `epic-done` relay event → **exit** drain loop
 
 **Persistent listening:**
 When the queue is empty (with or without blocked items), the worker does NOT exit. It blocks on the relay waiting for `work-queued`, `task-completed`, or `worker-disconnected` events. When received, re-scan. The worker stays alive until an exit condition is met.
@@ -241,11 +239,9 @@ s.on('data', d => {
 | `worker-disconnected` | Check for orphaned tasks, then re-scan |
 | `IDLE_TIMEOUT` (9 min) | Re-scan (safety net), then block again |
 
-### User interaction while idle
+### Exiting while idle
 
-- **`exit q`** — Stop the worker and disconnect. Exit cleanly.
-- **`/btw {message}`** — Handle the side request, then **resume listening**. Do not exit the drain loop.
-- **Any other user instruction** — The worker yields: exit the drain loop and handle the new instruction normally. The user's intent has shifted away from queue work.
+The relay listener is a blocking Bash command. User messages cannot be processed while it runs. To exit: press **Esc** to interrupt the listener. The worker returns to normal conversation flow and can process any queued input.
 
 ---
 
