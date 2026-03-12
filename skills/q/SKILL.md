@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 14.0.0
+  version: 15.0.0
 ---
 
 # Q
@@ -15,6 +15,7 @@ Two modes: **enqueue** (create a task) or **drain** (execute tasks).
 ```
 /q                — Drain the queue (worker mode — claim and execute tasks)
 q {description}   — Enqueue a task (create an instruction file)
+exit q            — Stop the worker and disconnect from relay
 ```
 
 Flags (enqueue only):
@@ -132,23 +133,23 @@ Start the relay manually: node ~/.claude/skills/relay/server.js
 ```
 ┌─→ 1. Scan for pending tasks
 │   2. If found → Claim via relay → Execute → Archive → /clear → loop back to 1
-│   3. If none + no blocked items → EXIT
-│   4. If none + blocked items exist → Block on relay for task-completed → loop back to 1
-│   5. If epic-done received → EXIT
+│   3. If none → Block on relay for work-queued/task-completed → loop back to 1
+│   4. If exit signal received → EXIT
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Scan:**
 1. List `XXX.md` files (pending). Pick lowest number whose dependencies are met.
 2. Also list `XXX-active.md` files. For each, run orphan detection (see Orphan Recovery). If orphaned → recover to pending, then re-scan.
-3. If no claimable task → check for blocked items (tasks with unmet `depends-on`).
+3. If no claimable task → block on relay (see Idle / Persistent Listening).
 
 **Exit conditions:**
-- Empty queue AND no blocked-dependency items → **exit cleanly**
+- User says `exit q` → **exit cleanly**
 - `epic-done` event received → **exit cleanly**
+- User gives any instruction that is NOT `/btw` → **exit cleanly** (the worker yields to the new instruction)
 
-**Blocked wait:**
-If pending tasks exist but all have unmet dependencies, block on relay waiting for `task-completed` events. When received, re-scan — the dependency may now be satisfied.
+**Persistent listening:**
+When the queue is empty (with or without blocked items), the worker does NOT exit. It blocks on the relay waiting for `work-queued`, `task-completed`, or `worker-disconnected` events. When received, re-scan. The worker stays alive until an exit condition is met.
 
 **Claim → Execute → Archive:**
 1. **Claim (relay-coordinated):**
@@ -206,9 +207,9 @@ If a worktree exists for the orphaned task, check for uncommitted work. If salva
 
 ---
 
-## Idle / Blocked Waiting
+## Idle / Persistent Listening
 
-When no immediately claimable tasks exist but blocked tasks remain:
+When no immediately claimable tasks exist, the worker stays connected to the relay and waits for new work. It does **not** exit on empty queue.
 
 **Block on relay events:**
 ```bash
@@ -234,11 +235,17 @@ s.on('data', d => {
 
 | Event received | Action |
 |---------------|--------|
-| `task-completed` | Re-scan — a dependency may now be met |
 | `work-queued` | Re-scan — new tasks available |
+| `task-completed` | Re-scan — a dependency may now be met |
 | `epic-done` | **Exit** drain loop |
 | `worker-disconnected` | Check for orphaned tasks, then re-scan |
-| `IDLE_TIMEOUT` (9 min) | Re-scan (safety net) |
+| `IDLE_TIMEOUT` (9 min) | Re-scan (safety net), then block again |
+
+### User interaction while idle
+
+- **`exit q`** — Stop the worker and disconnect. Exit cleanly.
+- **`/btw {message}`** — Handle the side request, then **resume listening**. Do not exit the drain loop.
+- **Any other user instruction** — The worker yields: exit the drain loop and handle the new instruction normally. The user's intent has shifted away from queue work.
 
 ---
 
