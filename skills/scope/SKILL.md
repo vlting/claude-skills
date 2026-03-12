@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 2.0.0
+  version: 2.1.0
 ---
 
 # Scope
@@ -168,6 +168,8 @@ integrations: [github]   # or: [] or omit entirely
 
 **First-run detection:** If `.ai-plans/config.yml` doesn't exist, auto-detect available CLIs (`gh`, `linear`, `jira`), ask user which to activate, write config. Subsequent runs read config directly.
 
+**Config validation (every run):** When `config.yml` lists an integration (e.g., `github`), verify the config block is complete. For GitHub: `owner`, `repo`, `project_number`, `project_node_id`, `status_field_id`, `status_options` must all be present. If missing → resolve field IDs via `gh project field-list` and write them. Never proceed with a half-configured integration — it causes silent side-effect failures in ADVANCE and SHIP.
+
 ---
 
 ## Phase 1: SCOPE
@@ -252,13 +254,18 @@ Stage {N}: {title} — {count} tasks
 
 ## Phase 3: EXECUTE
 
-Workers (`/q`) claim and execute tasks in worktrees.
+**The orchestrator does NOT implement.** Workers (`/q`) claim and execute tasks in worktrees.
 
-**Monitoring:**
-- Block on relay events: `task-completed`, `worker-disconnected`
-- Print progress: `[{completed}/{total}] Stage {N}: {title}`
+1. **Verify workers are running.** Check relay for connected workers. If none:
+   ```
+   ⚠ No workers connected. Start /q in 1-3 separate terminals to begin execution.
+   Waiting for workers...
+   ```
+   Do NOT proceed to implement the tasks yourself. Wait.
 
-**Completion:** All tasks in `_completed/` → proceed to VERIFY.
+2. **Monitor via relay events:** `task-completed`, `worker-disconnected`
+3. **Print progress:** `[{completed}/{total}] Stage {N}: {title}`
+4. **Completion:** All tasks archived in `_completed/` → proceed to VERIFY.
 
 ---
 
@@ -537,16 +544,31 @@ Epic branches merge to main. Stage branches merge to epic. Worker branches (`q-N
 
 ---
 
+## !! ROLE BOUNDARY !!
+
+Scope is **orchestration-only**. A `/scope` orchestrator:
+- **NEVER implements code directly** — no writing/modifying source files, components, tests, or application code
+- **NEVER skips the queue** — ALL implementation work MUST go through `.ai-queue/` for `/q` workers
+- **Only writes:** roadmap files, `.ai-queue/` task files, `config.yml`, and git/GitHub operations
+- **EXECUTE phase = monitoring only** — block on relay events, print progress, wait for workers
+- **If no workers are running:** tell the user to start `/q` workers in separate terminals. Do NOT do the work yourself.
+
+This boundary exists because the orchestrator and workers operate in separate contexts. The orchestrator manages the lifecycle; workers do the implementation. Violating this boundary means work happens without proper isolation, worktree safety, or parallel execution.
+
+---
+
 ## Rules
 
 1. **Never execute without approval.** Every gate requires a review card.
 2. **Council before code.** SCOPE and BREAKDOWN always invoke `/council --subroutine`.
-3. **Brevity in cards.** No paragraphs. Bullets only. Active voice.
-4. **Consistent hierarchy.** Summary > Scope > SoW > Risk > Action. Always this order.
-5. **Progressive disclosure.** Default = compressed. Detail on demand via `?`.
-6. **Iterate, don't restart.** Rejection refines the item, not the whole plan.
-7. **Level tags always.** `[SAGA]`/`[EPIC]`/`[STAGE]`/`[TASK]` prefix.
-8. **One roadmap file.** `.ai-plans/{slug}/roadmap.md` — single source of truth.
-9. **File-disjoint tasks.** Parallel-safe by construction.
-10. **Commit state to git.** Roadmap survives `/clear`.
-11. **Relay required.** No fallback polling — relay must be running for worker coordination.
+3. **Never implement code.** Scope writes task files. Workers implement. No exceptions.
+4. **Brevity in cards.** No paragraphs. Bullets only. Active voice.
+5. **Consistent hierarchy.** Summary > Scope > SoW > Risk > Action. Always this order.
+6. **Progressive disclosure.** Default = compressed. Detail on demand via `?`.
+7. **Iterate, don't restart.** Rejection refines the item, not the whole plan.
+8. **Level tags always.** `[SAGA]`/`[EPIC]`/`[STAGE]`/`[TASK]` prefix.
+9. **One roadmap file.** `.ai-plans/{slug}/roadmap.md` — single source of truth.
+10. **File-disjoint tasks.** Parallel-safe by construction.
+11. **Commit state to git.** Roadmap survives `/clear`.
+12. **Relay required.** No fallback polling — relay must be running for worker coordination.
+13. **Integration side-effects are mandatory.** When `config.yml` lists an integration, every ADVANCE and SHIP phase MUST execute all side-effects (update PR body, update issue body, move board status). Never skip silently.

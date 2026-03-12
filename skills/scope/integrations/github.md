@@ -140,8 +140,22 @@ github:
   owner: OWNER
   repo: REPO
   mode: owner  # or: contributor
-  project_number: 2  # optional
+  project_number: 1
+  project_node_id: PVT_xxx  # from: gh api graphql -f query='{ organization(login: "OWNER") { projectV2(number: N) { id } } }'
+  status_field_id: PVTSSF_xxx  # from: gh project field-list N --owner OWNER
+  status_options:
+    planning: "abc123"
+    todo: "def456"
+    in_progress: "ghi789"
+    in_review: "jkl012"
+    done: "mno345"
 ```
+
+**Setup (auto-resolved on first run):**
+1. Ask user for `owner`, `repo`, `project_number`
+2. Resolve `project_node_id` via GraphQL
+3. Resolve `status_field_id` and `status_options` via `gh project field-list`
+4. Write complete config — never leave fields as placeholders
 
 **Owner vs Contributor:**
 - **Owner:** Full CRUD on issues, labels, board.
