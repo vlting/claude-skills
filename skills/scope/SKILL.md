@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 2.1.0
+  version: 2.2.0
 ---
 
 # Scope
@@ -235,6 +235,7 @@ Stage {N}: {title} — {count} tasks
 
 5. **On approval:**
    - Create stage branch: `git checkout epic/{slug} && git checkout -b {prefix}/{slug}/{stage-slug}`
+   - **Integration: create stage sub-ticket** — `create-ticket` for the stage, linking to parent epic issue. Add to project board in **Todo** status.
    - Write task instruction files to `.ai-queue/`:
      ```markdown
      <!-- auto-queue -->
@@ -243,6 +244,7 @@ Stage {N}: {title} — {count} tasks
      # Task: {title}
      {Implementation instructions with file paths and acceptance criteria}
      ```
+   - **Integration: move stage ticket to In Progress** on board
    - Send `work-queued` event via relay
    - Update roadmap: stage status → `in-progress`, phase → `execute`
 
@@ -308,7 +310,10 @@ Risk:     {assessment}
 
 3. **Update roadmap:** Mark stage done (criteria already checked from VERIFY).
 
-4. **Integration side-effects:** If configured: update epic PR body (check off stage), update epic issue body, close stage sub-ticket, move to Done on board.
+4. **Integration side-effects (mandatory when configured):**
+   - [ ] `update-epic-pr` — check off `- [x] Stage {N}: {title} (#{stage_pr})` in epic PR body
+   - [ ] `close-ticket` — close the stage sub-issue with "Completed."
+   - [ ] `move-to-done` — move stage sub-issue to **Done** on project board
 
 5. **More stages?** → BREAKDOWN for next stage.
    **All stages done?** → SHIP.
@@ -334,9 +339,13 @@ Risk:     {assessment}
    ```
 
 3. **On approval:** Mark PR ready for review. Wait for CI. If green → merge.
-4. **Cleanup:** Archive roadmap (`status: done`), commit. If integration: close tracking ticket, move board status Planning → Done.
-5. **Multi-epic:** proceed to next epic's BREAKDOWN instead of sending `epic-done`.
-6. **All epics done:** send `epic-done` via relay, print summary.
+4. **Integration side-effects (mandatory when configured):**
+   - [ ] `update-saga-issue` — check off `- [x] Epic {N}: {title} (#{epic_pr})` in saga issue body
+   - [ ] `update-epic-pr` — verify all stages checked off in epic PR body (should already be done in ADVANCE)
+   - [ ] `move-to-done` — move epic PR to **Done** on project board (epics go from Planning → Done, never In Progress)
+5. **Cleanup:** Update roadmap status. Commit.
+6. **Multi-epic:** proceed to next epic's BREAKDOWN instead of sending `epic-done`.
+7. **All epics done:** send `epic-done` via relay. Move saga issue + saga PR to **Done** on board. Print summary.
 
 ---
 
