@@ -133,7 +133,7 @@ Start the relay manually: node ~/.claude/skills/relay/server.js
 ┌─→ 1. Scan for pending tasks
 │   2. If found → Claim via relay → Execute → Archive → /clear → loop back to 1
 │   3. If none → Block on relay for work-queued/task-completed → loop back to 1
-│   4. If exit signal received → EXIT
+│   4. If user presses Esc → EXIT
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -142,9 +142,7 @@ Start the relay manually: node ~/.claude/skills/relay/server.js
 2. Also list `XXX-active.md` files. For each, run orphan detection (see Orphan Recovery). If orphaned → recover to pending, then re-scan.
 3. If no claimable task → block on relay (see Idle / Persistent Listening).
 
-**Exit conditions:**
-- User presses **Esc** to interrupt the blocking listener → worker returns to normal conversation flow
-- `epic-done` relay event → **exit** drain loop
+**Exit condition:** User presses **Esc** to interrupt the blocking listener → worker returns to normal conversation flow.
 
 **Persistent listening:**
 When the queue is empty (with or without blocked items), the worker does NOT exit. It blocks on the relay waiting for `work-queued`, `task-completed`, or `worker-disconnected` events. When received, re-scan. The worker stays alive until an exit condition is met.
@@ -228,14 +226,13 @@ s.on('data', d => {
     } catch {}
   }
 });
-" "$RELAY_SOCK" "540000" "work-queued" "epic-done" "task-completed" "worker-disconnected"
+" "$RELAY_SOCK" "540000" "work-queued" "task-completed" "worker-disconnected"
 ```
 
 | Event received | Action |
 |---------------|--------|
 | `work-queued` | Re-scan — new tasks available |
 | `task-completed` | Re-scan — a dependency may now be met |
-| `epic-done` | **Exit** drain loop |
 | `worker-disconnected` | Check for orphaned tasks, then re-scan |
 | `IDLE_TIMEOUT` (9 min) | Re-scan (safety net), then block again |
 
