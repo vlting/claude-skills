@@ -662,3 +662,7 @@ This boundary exists because the orchestrator and workers operate in separate co
 11. **Commit state to git.** Roadmap survives `/clear`.
 12. **Relay required.** No fallback polling — relay must be running for worker coordination.
 13. **Integration side-effects are mandatory.** When `config.yml` lists an integration, every ADVANCE and SHIP phase MUST execute all side-effects (update PR body, update issue body, move board status). Never skip silently.
+14. **Labels are mandatory.** Every saga issue gets `saga` label. Every epic issue gets `epic` label. Every stage issue gets `stage` label. Verify after creation.
+15. **Checklist links are mandatory.** When checking off a stage in an epic PR/issue body, or an epic in a saga issue body, ALWAYS include the PR number: `- [x] Stage N: title (#PR_NUMBER)`. Never check off without linking.
+16. **Board status transitions are mandatory.** Sagas/epics: Planning on creation → Done on merge (no other statuses ever). Stages: Todo → In Progress → In Review → Done. Never skip transitions.
+17. **Verify after every side-effect.** After updating a PR body, issue body, or board status, re-read the target to confirm the change took effect. If it didn't, fix it immediately.

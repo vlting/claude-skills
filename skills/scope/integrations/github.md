@@ -4,6 +4,8 @@ Requires: `gh` CLI authenticated.
 
 ## create-ticket
 
+**MANDATORY: Every issue MUST have the correct label (`saga`, `epic`, or `stage`).** No exceptions. Verify labels exist first.
+
 ```bash
 # Epic/saga-level issue
 gh issue create --repo OWNER/REPO \
@@ -17,6 +19,8 @@ gh issue create --repo OWNER/REPO \
   --label "stage" \
   --body "Parent: #{epic_issue}\nBranch: {stage_branch}"
 ```
+
+**After creating a saga or epic issue:** Immediately move it to **Planning** on the project board. This is its initial status and it stays there until SHIP/completion.
 
 Create labels on first use (idempotent):
 ```bash
@@ -41,7 +45,7 @@ gh pr create --draft \
 
 ## update-epic-pr
 
-After merging a stage PR, update the epic PR body to check off the stage and link the merged stage PR.
+**MANDATORY after merging a stage PR.** Check off the stage AND link the merged stage PR number in the epic PR body. Both the checkmark and the PR link are required.
 
 ```bash
 # Get current epic PR body
@@ -54,9 +58,11 @@ UPDATED=$(echo "$BODY" | sed 's/- \[ \] Stage {N}: {title}/- [x] Stage {N}: {tit
 gh pr edit {epic_pr_number} --repo OWNER/REPO --body "$UPDATED"
 ```
 
+**Verification:** After updating, re-read the PR body to confirm the checkbox is checked and the PR number is linked. If verification fails, retry with corrected sed pattern.
+
 ## update-epic-issue
 
-After merging a stage PR, check off the stage checkbox in the epic issue body.
+**MANDATORY after merging a stage PR.** Check off the stage AND link the merged stage PR number in the epic issue body. Both the checkmark and the PR link are required.
 
 ```bash
 # Get current issue body
@@ -68,6 +74,8 @@ UPDATED=$(echo "$BODY" | sed 's/- \[ \] Stage {N\.M}: {title}/- [x] Stage {N\.M}
 # Update the issue body
 gh issue edit {epic_issue_number} --repo OWNER/REPO --body "$UPDATED"
 ```
+
+**Verification:** After updating, re-read the issue body to confirm the checkbox is checked and the PR number is linked.
 
 ## link-ticket
 
@@ -108,17 +116,24 @@ gh project item-edit --project-id "$PROJECT_NODE_ID" --id "$ITEM_ID" \
 
 ### Board status rules
 
-**IMPORTANT — Epic/saga issues and their PRs use only two columns:**
-- **Planning** — when created
-- **Done** — when shipped
+**!! CRITICAL — Read and follow these rules exactly !!**
 
-They NEVER go in Todo, In Progress, or In Review. Even while actively being worked on, epics/sagas stay in Planning until fully complete.
+**Epic/saga issues and their PRs use ONLY two statuses:**
+- **Planning** — set immediately on creation
+- **Done** — set only when the PR merges (SHIP phase)
+- They MUST NEVER be moved to Todo, In Progress, or In Review. Even while actively being worked on, epics/sagas stay in Planning until fully shipped.
 
-**Stage sub-issues** move through all columns: Todo → In Progress → In Review → Done.
+**Stage sub-issues** move through all columns:
+- **Todo** — set on creation (BREAKDOWN phase)
+- **In Progress** — set when workers begin execution (EXECUTE phase)
+- **In Review** — set when stage PR is created (ADVANCE phase, before merge)
+- **Done** — set when stage PR merges and issue closes
+
+**Enforcement:** After every status-changing action, verify the board status is correct. Never skip status transitions.
 
 ## update-saga-issue
 
-After completing an epic (SHIP phase), check off the epic checkbox in the saga issue body.
+**MANDATORY after completing an epic (SHIP phase).** Check off the epic AND link the merged epic PR number in the saga issue body. Both the checkmark and the PR link are required.
 
 ```bash
 # Get current saga issue body
@@ -130,6 +145,8 @@ UPDATED=$(echo "$BODY" | sed 's/- \[ \] Epic {N}: {epic_title_pattern}/- [x] Epi
 # Update the saga issue body
 gh issue edit {saga_issue_number} --repo OWNER/REPO --body "$UPDATED"
 ```
+
+**Verification:** After updating, re-read the saga issue body to confirm the checkbox is checked and the PR number is linked.
 
 ## Configuration
 
