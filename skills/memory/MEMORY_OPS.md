@@ -35,6 +35,7 @@ Default limits are generous (quality > cost). Each skill gate can override with 
 |---|---|---|---|
 | `reinforce-used` | `mcp__memory__memory_reinforce` | `id: "{id}"` | Boost salience of memories that influenced decisions |
 | `forget-wrong` | `mcp__memory__memory_forget` | `id: "{id}"` | Soft-delete memories the user says are wrong |
+| `update-memory` | `mcp__memory__memory_update` | `id: "{id}", name?, description?, content?, type?, scope?, project?, disciplines?` | Update memory fields in-place — preserves ID, salience, access history |
 
 ---
 

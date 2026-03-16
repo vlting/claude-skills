@@ -19,6 +19,7 @@ Direct interface to the JIT memory system. Search, save, manage, and clean up me
 /memory reinforce {query}  — boost salience of matching memory
 /memory forget {query}     — soft-delete matching memory
 /memory stats              — counts by type/scope, top-5 accessed, staleness
+/memory update {query}     — update matching memory in-place
 /memory cleanup            — show cleanup candidates, approve per-memory
 /memory archive {query}    — send matching memories to cold storage
 /memory promote {query}    — bring cold memories back to hot
@@ -102,6 +103,15 @@ Read `~/.claude/skills/memory/MEMORY_OPS.md` for tool call templates used by all
 4. `AskUserQuestion`: "Forget '{name}'? This soft-deletes it. (y/n)"
 5. Call `mcp__memory__memory_forget(id: "{resolved_id}")`.
 6. Confirm: `Forgotten: "{name}"`
+
+### `/memory update {query}`
+
+1. Call `mcp__memory__memory_recall(query: "{query}", limit: 5)`.
+2. If 1 result → show current content, ask what to change.
+3. If multiple → `AskUserQuestion` with numbered list, ask which to update.
+4. `AskUserQuestion`: "What fields to update?" — show current name, description, content. Accept new values.
+5. Call `mcp__memory__memory_update(id, ...changed_fields)`.
+6. Confirm: `Updated: "{name}"`
 
 ### `/memory cleanup`
 
