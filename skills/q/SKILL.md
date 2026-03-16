@@ -321,6 +321,18 @@ setTimeout(() => s.destroy(), 500);
 " "$RELAY_SOCK" "{event-name}"
 ```
 
+## Memory Integration
+
+Lightweight recall restores context after `/clear`. Read `~/.claude/skills/memory/MEMORY_OPS.md` for tool call templates.
+
+| Point | Action |
+|-------|--------|
+| **Task claim** | `recall-prior-art` with task title + file paths. `recall-constraints` with "worker role boundary". |
+| **Task error** (build/lint/test fail) | `store-outcome` with error + resolution |
+| **Task complete** (non-obvious fix) | `store-decision` with technique used |
+
+---
+
 **!! ROLE BOUNDARY !!**
 Q is execution-only. A `/q` worker:
 - Never runs phases, stages, or lifecycle management

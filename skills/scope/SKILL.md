@@ -615,6 +615,25 @@ Epic branches merge to main. Stage branches merge to epic. Worker branches (`q-N
 
 ---
 
+## Memory Integration
+
+Recall at phase entries. Store on outcomes. Reinforce on use. Read `~/.claude/skills/memory/MEMORY_OPS.md` for tool call templates.
+
+| Phase | Action |
+|-------|--------|
+| **SCOPE entry** | `recall-prior-art` with goal keywords + `recall-constraints` with "scope orchestrator" |
+| **BREAKDOWN entry** | `recall-checklist` with "breakdown github tracking tickets" |
+| **EXECUTE entry** | `recall-constraints` with "scope never implement execute monitor workers". Reinforce any recalled feedback memories. |
+| **VERIFY** | `recall-prior-art` with test/lint patterns for this project |
+| **ADVANCE** | `recall-checklist` with "advance integration side-effects PR board". Reinforce recalled checklist memories. |
+| **SHIP** | `recall-checklist` with "ship merge saga close". `store-outcome` summarizing the initiative. |
+
+**Auto-store on Review Card rejection:** When user responds `n` + feedback containing a directive (negation, "don't", "always", "never", corrective language), auto-store as `store-feedback`.
+
+**Attribution:** When a recalled memory influences a decision, annotate the bullet in the Review Card with `[mem:short-name]`. Cap at 3 per section. In `?` expanded view, show full memory content.
+
+---
+
 ## !! ROLE BOUNDARY !!
 
 Scope is **orchestration-only**. A `/scope` orchestrator:

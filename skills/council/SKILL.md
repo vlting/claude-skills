@@ -151,6 +151,19 @@ Document: "Conflict {A} vs {B} on {topic}: resolved by {reasoning}"
 
 ---
 
+## Memory Integration
+
+Recall enriches exploration. Store captures decisions. Read `~/.claude/skills/memory/MEMORY_OPS.md` for tool call templates.
+
+| Phase | Action |
+|-------|--------|
+| **EXPLORE** | `recall-prior-art` with task keywords (reference + feedback types). Inject results into context brief as `## Prior Knowledge` section. |
+| **DELIBERATE** | Per-persona discipline recall: `arch` → "type safety abstractions", `ux` → "accessibility interaction", `design` → "design tokens visual". Others → `recall-prior-art` with task keywords. |
+| **PRESENT** | `store-decision` with key decisions + rationale |
+| **User resolves tension** | `store-feedback` with the resolution reasoning |
+
+---
+
 ## Rules
 
 1. **Plan mode enforced (standard).** `EnterPlanMode` first. Exception: `--subroutine`.

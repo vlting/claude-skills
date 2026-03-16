@@ -151,6 +151,19 @@ Below are the 15 most commonly needed components. For the full 60+ component ref
 | **Badge** | Status/metadata label | 1–2 words; pill shape for status; limited color palette |
 | **Dropdown menu** | Action/nav options | 7±2 items; destructive actions last in red |
 
+## Memory Integration
+
+Recall surfaces design precedent. Store captures corrections. Read `~/.claude/skills/memory/MEMORY_OPS.md` for tool call templates.
+
+| Point | Action |
+|-------|--------|
+| **Step 1** (identify components) | `recall-discipline` with component names, scope: "discipline:frontend" |
+| **Step 4** (generate code) | `recall-constraints` with "STL styling feedback shorthands" |
+| **User corrects generated UI** | `store-feedback` with correction, disciplines: "frontend,css" |
+| **New pattern established** | `store-decision` with pattern description, disciplines: "frontend" |
+
+---
+
 ## Anti-Patterns to Avoid
 
 Never generate these — they signal generic, low-quality UI:

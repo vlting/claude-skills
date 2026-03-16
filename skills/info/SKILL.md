@@ -27,7 +27,9 @@ Quick-reference card for any installed skill. Usage: `/info {skill-name}`
    - `--flag` patterns
    - Fenced code blocks showing CLI usage
 
-5. **Output a compact card:**
+5. **Check for Memory Integration.** If skill file contains `## Memory Integration`, extract a one-line summary of recall/store triggers.
+
+6. **Output a compact card:**
 
 ```
 {name} v{version}
@@ -41,6 +43,8 @@ Sub-actions:
 Flags:
   --flag1            — description
   (none)
+
+Memory:  {if ## Memory Integration exists: "recalls on {phases}, stores on {triggers}" | else: "(none)"}
 ```
 
 ---
