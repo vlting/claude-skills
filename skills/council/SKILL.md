@@ -66,6 +66,12 @@ Produce: 1) Affected files/modules 2) Existing patterns 3) Constraints
 4) Prior art 5) Open questions. Check tests, types, and usage sites.
 ```
 
+Parallel recall (fire together):
+- `recall-prior-art` with task keywords (project-scoped)
+- `recall-lateral` with task keywords (unscoped — cross-domain serendipity, limit 5)
+
+Inject recall results into context brief as `## Prior Knowledge` and `## Lateral Connections` sections.
+
 Output: structured context brief fed to all personas.
 
 ---
@@ -157,7 +163,7 @@ Recall enriches exploration. Store captures decisions. Read `~/.claude/skills/me
 
 | Phase | Action |
 |-------|--------|
-| **EXPLORE** | `recall-prior-art` with task keywords (reference + feedback types). Inject results into context brief as `## Prior Knowledge` section. |
+| **EXPLORE** | `recall-prior-art` + `recall-lateral` (parallel). Inject as `## Prior Knowledge` + `## Lateral Connections`. |
 | **DELIBERATE** | Per-persona discipline recall: `arch` → "type safety abstractions", `ux` → "accessibility interaction", `design` → "design tokens visual". Others → `recall-prior-art` with task keywords. |
 | **PRESENT** | `store-decision` with key decisions + rationale |
 | **User resolves tension** | `store-feedback` with the resolution reasoning |
