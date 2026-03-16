@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 2.2.0
+  version: 2.3.0
 ---
 
 # Scope
@@ -17,6 +17,7 @@ Interactive, approval-gated planning and orchestration. Every unit of work is re
 /scope                 — resume active initiative; if none, read SCOPE.md (non-empty) from repo root
 /scope status          — show hierarchy dashboard
 /scope update          — modify an active roadmap
+/scope watch           — monitor workers, verify tracking, then auto-resume
 /scope abort           — abort (preserves all work)
 ```
 
@@ -460,6 +461,67 @@ For single-epic: omit epic grouping, show stages directly.
 For small scope: show task status.
 
 Reads from `.ai-plans/` — scan for all roadmaps, display active ones.
+
+---
+
+## `/scope watch`
+
+Autonomous monitor → verify → resume cycle. Use during EXECUTE phase when workers are processing tasks.
+
+### Behavior
+
+Three sequential phases, fully autonomous (no user interaction until next gate):
+
+**Phase A: Monitor (up to 9 minutes)**
+
+1. Read roadmap to determine current stage, total task count, and stage issue number.
+2. Poll `.ai-queue/` and `.ai-queue/_completed/` every 60 seconds:
+   - Count remaining vs completed tasks
+   - Print progress: `[{completed}/{total}] Stage {N}: {title} — {elapsed}`
+   - If workers disconnect (no progress for 2+ cycles), re-send `work-queued` via relay
+3. **Exit conditions:**
+   - All tasks moved to `_completed/` → proceed to Phase B
+   - 9 minutes elapsed with tasks remaining → print status, ask user whether to extend or intervene
+
+**Phase B: Verify GitHub Tracking**
+
+Once all tasks complete, audit integration side-effects for the current stage:
+
+1. **Stage issue exists** and is in correct board status (In Progress)
+2. **Epic PR body** has current stage listed (unchecked is fine — that happens in ADVANCE)
+3. **Saga issue body** has current epic listed
+4. **All completed task branches** merged to stage branch (workers handle this, but verify)
+5. **No orphaned issues/PRs** from this stage
+
+Fix any gaps silently (create missing issues, update board status, edit PR bodies). Print a one-line summary of what was fixed, or "Tracking clean — no fixes needed."
+
+**Phase C: Resume Flow**
+
+Continue the `/scope` lifecycle as if the user ran `/scope`:
+1. Read roadmap frontmatter → current phase should be `execute`
+2. Transition to **VERIFY** — run build/lint/test, check acceptance criteria
+3. Present the `[VERIFY]` Review Card for user approval
+4. On approval → ADVANCE → next stage BREAKDOWN (or SHIP if final stage)
+
+This is the standard `/scope` resume flow from Phase 4 onward — watch simply automates the wait.
+
+### Polling implementation
+
+```bash
+# Count remaining tasks (non-hidden files in .ai-queue/, excluding _completed/)
+REMAINING=$(find .ai-queue -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')
+COMPLETED=$(find .ai-queue/_completed -maxdepth 1 -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
+```
+
+Use the `/loop` skill pattern internally — but `/scope watch` is a single invocation, not recurring. The polling loop runs within the single command execution.
+
+### Rules
+
+- **No user interaction during Phase A/B.** Only Phase C (VERIFY gate) requires approval.
+- **Re-send relay events** if workers appear stalled (no new completions for 2+ minutes).
+- **9-minute ceiling is soft.** If 6/7 tasks done at 9 min, extend 3 min automatically. Only prompt if <50% done at 9 min.
+- **Phase B is mandatory.** Never skip tracking verification, even if all tasks completed quickly.
+- **Phase C is standard /scope resume.** Same gates, same rules as `/scope` with no arguments.
 
 ---
 
