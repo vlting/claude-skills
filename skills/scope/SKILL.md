@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 2.3.0
+  version: 2.4.0
 ---
 
 # Scope
@@ -18,6 +18,7 @@ Interactive, approval-gated planning and orchestration. Every unit of work is re
 /scope status          — show hierarchy dashboard
 /scope update          — modify an active roadmap
 /scope watch           — monitor workers, verify tracking, then auto-resume
+/scope clean           — audit + fix all PM tracking (roadmap, issues, PRs, board)
 /scope abort           — abort (preserves all work)
 ```
 
@@ -531,6 +532,79 @@ Use the `/loop` skill pattern internally — but `/scope watch` is a single invo
 - **9-minute ceiling is soft.** If 6/7 tasks done at 9 min, extend 3 min automatically. Only prompt if <50% done at 9 min.
 - **Phase B is mandatory.** Never skip tracking verification, even if all tasks completed quickly.
 - **Phase C is standard /scope resume.** Same gates, same rules as `/scope` with no arguments.
+
+---
+
+## `/scope clean`
+
+Full-initiative audit + repair. Derives truth from **shipped code** (merged PRs, branch state), then reconciles roadmap + GH artifacts to match.
+
+**Source of truth hierarchy:**
+1. **Merged code** — PRs merged, branches merged = work is done
+2. **Roadmap** — updated to reflect merged code
+3. **GH issues/PRs** — updated to reflect roadmap
+4. **Board** — updated to reflect issue/PR state
+
+### Four Audit Passes (all autonomous, no user interaction)
+
+**Pass 1: Code → Roadmap**
+
+Scan merged PRs and branch state to determine what's actually shipped:
+- For each stage: check if its branch was merged to epic branch (or PR merged). If merged but roadmap says `pending`/`in-progress` → mark `done`, check off acceptance criteria.
+- For each epic: if all stages done but epic says `in-progress` → check if epic branch merged to main. If so → mark `done`.
+- Update roadmap `current_epic`/`current_stage`/`phase` frontmatter to reflect actual state.
+- Commit roadmap changes if any.
+
+**Pass 2: Roadmap → GitHub Issues**
+
+For each epic/stage in the roadmap:
+1. If roadmap has `Issue: #N` — verify issue exists, has correct label (`epic`/`stage`), is open/closed appropriately (done → closed, in-progress → open)
+2. If roadmap has NO issue reference — create missing issue, link to parent, add label, set board status, write issue # back to roadmap
+3. Verify epic issue body lists all stages in checklist format
+4. Verify saga issue body lists all epics in checklist format
+
+**Pass 3: Roadmap → GitHub PRs**
+
+For each epic with a PR:
+1. Verify PR body has all stages in checklist format
+2. Done stages checked off with PR link: `- [x] Stage N: title (#PR)`
+3. In-progress/pending stages unchecked: `- [ ] Stage N: title`
+4. Fix mismatches (missing checkoffs, missing PR links, missing entries)
+
+**Pass 4: Board Status**
+
+For each tracked issue:
+1. Epic/saga issues: **Planning** (active) or **Done** (complete). Never Todo/InProgress/InReview.
+2. Stage issues: `pending` → Todo, `in-progress` → In Progress, has PR → In Review, `done` → Done
+3. Fix status mismatches
+
+### Output
+
+```
+/scope clean — {title}
+──────────────────────────────────
+Fixed:
+  • Roadmap: marked Stage 6.1 done (PR #209 merged)
+  • Created missing issue for Stage 6.2 (#211)
+  • Checked off Stage 6.1 in epic PR #209 body
+  • Moved #208 from In Progress → Done
+  • Added 'stage' label to #211
+
+Clean:
+  • Epic issue #206 ✓
+  • Roadmap frontmatter ✓
+
+{or "All clean — nothing to fix."}
+```
+
+### Rules
+
+- No user interaction. Fix everything, report at end.
+- Read `config.yml` for integration. No integration → "No integration configured, nothing to audit."
+- Read `integrations/github.md` for concrete commands.
+- Idempotent — safe to run repeatedly.
+- CAN update roadmap (statuses, issue/PR references, frontmatter). Shipped code is ground truth.
+- Commits roadmap changes if modified.
 
 ---
 
