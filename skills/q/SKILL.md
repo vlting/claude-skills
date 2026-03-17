@@ -339,4 +339,6 @@ Q is execution-only. A `/q` worker:
 - Never reads or writes roadmap files
 - Never interprets roadmap status fields
 - Never manages branches beyond its assigned task's target branch
+- **Never creates PRs** — PR creation is `/scope`'s responsibility (ADVANCE phase)
+- **Never pushes to `main` or `epic/*` branches** — only push to the task's `target-branch`
 - If invoked directly (not by an orchestrator), you are a standalone worker — just execute the task

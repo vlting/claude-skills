@@ -298,25 +298,34 @@ Risk:     {assessment}
 
 ## Phase 5: ADVANCE
 
-1. **Create stage PR** to epic branch:
+> **Protocol:** Read `references/branch-protocol.md` before creating any PR. Stage PRs MUST target `epic/{slug}`, never `main`.
+
+1. **Validate PR target** — assert base branch is `epic/{slug}`:
+   ```bash
+   BASE="epic/${SLUG}"
+   # Verify epic branch exists and is up to date
+   git fetch origin "$BASE" || { echo "ERROR: epic branch $BASE not found"; exit 1; }
+   ```
+
+2. **Create stage PR** to epic branch:
    ```bash
    gh pr create --base epic/{slug} --head {prefix}/{slug}/{stage-slug} \
      --title "Stage {N}: {title}" --body "Closes stage {N} of {slug}"
    ```
 
-2. **Merge stage PR:**
+3. **Merge stage PR:**
    ```bash
    gh pr merge --merge --delete-branch
    ```
 
-3. **Update roadmap:** Mark stage done (criteria already checked from VERIFY).
+4. **Update roadmap:** Mark stage done (criteria already checked from VERIFY).
 
-4. **Integration side-effects (mandatory when configured):**
+5. **Integration side-effects (mandatory when configured):**
    - [ ] `update-epic-pr` — check off `- [x] Stage {N}: {title} (#{stage_pr})` in epic PR body
    - [ ] `close-ticket` — close the stage sub-issue with "Completed."
    - [ ] `move-to-done` — move stage sub-issue to **Done** on project board
 
-5. **More stages?** → BREAKDOWN for next stage.
+6. **More stages?** → BREAKDOWN for next stage.
    **All stages done?** → SHIP.
 
 ### SHIP (epic complete)
