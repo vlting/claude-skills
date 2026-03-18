@@ -77,9 +77,18 @@ Feed the EXPLORE context brief into the council invocation so it doesn't duplica
 
 Output: reconciled council plan.
 
+**⚠️ STOP. Do NOT proceed to ENQUEUE. The next step is PRESENT — you must show the plan and call `AskUserQuestion`. Council finishing does NOT mean the user has approved.**
+
 ---
 
-## Phase 3: PRESENT
+## Phase 3: PRESENT — MANDATORY APPROVAL GATE
+
+**This phase is NON-NEGOTIABLE. Skipping it is a contract violation.**
+
+After council returns, you MUST:
+1. Format the review card below
+2. Call `AskUserQuestion` with approve / reject / refine options
+3. WAIT for the user's response before doing anything else
 
 Display the plan as a review card:
 
@@ -104,10 +113,12 @@ Display the plan as a review card:
 **refine: {feedback}** — re-run PLAN with feedback incorporated
 ```
 
-Use `AskUserQuestion` to prompt:
+**IMMEDIATELY** call `AskUserQuestion` — no additional text, no delay:
 ```
 Review the plan above. Reply: approve, reject, or refine: {your feedback}
 ```
+
+**If you are about to invoke `/q` or write any files and have NOT yet called `AskUserQuestion` in this conversation — STOP. You skipped PRESENT. Go back and call it now.**
 
 ### Refinement Loop
 
@@ -123,6 +134,8 @@ On `reject`: print "Aborted." and return to normal conversation.
 ---
 
 ## Phase 4: ENQUEUE
+
+**PREREQUISITE:** User MUST have responded "approve" to an `AskUserQuestion` call. If you have not called `AskUserQuestion` yet, STOP — go back to Phase 3.
 
 On `approve`:
 
