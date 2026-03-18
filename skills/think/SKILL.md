@@ -79,6 +79,12 @@ Output: reconciled council plan.
 
 **⚠️ STOP. Do NOT proceed to ENQUEUE. The next step is PRESENT — you must show the plan and call `AskUserQuestion`. Council finishing does NOT mean the user has approved.**
 
+**⚠️ MANDATORY RECALL:** Before proceeding, recall constraints from memory MCP:
+```
+recall-constraints: query "think PRESENT gate AskUserQuestion approval", type: "feedback", limit: 5
+```
+Read the recalled feedback. It will remind you of the approval gate requirement. Then proceed to PRESENT.
+
 ---
 
 ## Phase 3: PRESENT — MANDATORY APPROVAL GATE
@@ -86,9 +92,10 @@ Output: reconciled council plan.
 **This phase is NON-NEGOTIABLE. Skipping it is a contract violation.**
 
 After council returns, you MUST:
-1. Format the review card below
-2. Call `AskUserQuestion` with approve / reject / refine options
-3. WAIT for the user's response before doing anything else
+1. **Recall constraints** from memory MCP (see above) — this is a hard gate, not optional
+2. Format the review card below
+3. Call `AskUserQuestion` with approve / reject / refine options
+4. WAIT for the user's response before doing anything else
 
 Display the plan as a review card:
 
@@ -171,6 +178,21 @@ Skill: q
 ```
 
 This starts the drain loop. The current agent becomes a worker and processes its own queued tasks. Other workers can pick up remaining tasks in parallel from other terminals.
+
+---
+
+## Memory Integration
+
+Read `~/.claude/skills/memory/MEMORY_OPS.md` for tool call templates.
+
+| Point | Action |
+|-------|--------|
+| **Skill entry** | `recall-constraints` with "think orchestrator approval gate" (feedback, global). Surfaces PRESENT-gate feedback. |
+| **PLAN → PRESENT transition** | `recall-constraints` with "think PRESENT gate AskUserQuestion approval" (feedback, global). **This is a hard gate — do not skip.** Read results before proceeding. |
+| **After user approves** | `store-decision` if non-obvious plan choices were made |
+| **After user refines** | `store-feedback` with the refinement reasoning |
+
+**Why recall twice?** The PLAN→PRESENT transition is the exact failure point. Recalling constraints there forces the agent to pause and read feedback about the approval gate before continuing. Context compression or long council output can push earlier instructions out of working memory — the recall restores them.
 
 ---
 
