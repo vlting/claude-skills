@@ -158,13 +158,11 @@ This triggers `/q`'s segment mode:
 - Creates numbered `.ai-queue/` instruction files with `<!-- auto-queue -->` headers
 - Prints the task walkthrough
 
-**`/q` handles `--no-auto` implicitly when called from enqueue mode** — it creates files but does not start draining, because `/think` controls the transition to execution.
-
-Pass `--no-auto` explicitly:
+**Do NOT pass `--no-auto`.** Let `/q` enqueue and start draining in one invocation. This eliminates the risk of forgetting Phase 5.
 
 ```
 Skill: q
-Args: {plan} --no-auto
+Args: Implement the following plan:\n\n{full_plan_text}\n\nGoal: {goal}
 ```
 
 ---
