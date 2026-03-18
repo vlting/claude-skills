@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 15.1.0
+  version: 15.2.0
 ---
 
 # Q
@@ -207,34 +207,51 @@ If a worktree exists for the orphaned task, check for uncommitted work. If salva
 
 When no immediately claimable tasks exist, the worker stays connected to the relay and waits for new work. It does **not** exit on empty queue.
 
-**Block on relay events:**
+**Subscribe-first-then-scan** to eliminate the race where `work-queued` fires between the scan and the relay connect:
+
 ```bash
 node -e "
-const s = require('net').connect(process.argv[1]);
-const events = new Set(process.argv.slice(3));
-const timeout = setTimeout(() => { console.log('IDLE_TIMEOUT'); s.destroy(); }, +process.argv[2]);
-s.write(JSON.stringify({type:'identify',pid:process.env.PPID||0})+'\n');
+const fs = require('fs');
+const net = require('net');
+const sock = process.argv[1];
+const queueDir = process.argv[2];
+const timeout = +process.argv[3] || 540000;
+const events = new Set(process.argv.slice(4));
+const s = net.connect(sock);
+const timer = setTimeout(() => { console.log('IDLE_TIMEOUT'); s.destroy(); }, timeout);
+s.once('connect', () => {
+  s.write(JSON.stringify({type:'identify',pid:process.env.PPID||0})+'\n');
+  // Scan AFTER subscribing — closes the race window
+  try {
+    const pending = fs.readdirSync(queueDir).filter(f => /^\d{3}\.md$/.test(f));
+    if (pending.length) { clearTimeout(timer); console.log('WORK_FOUND'); s.destroy(); return; }
+  } catch {}
+});
 s.on('data', d => {
   for (const line of d.toString().split('\n').filter(Boolean)) {
     try {
       const msg = JSON.parse(line);
       if (msg.type === 'event' && events.has(msg.event)) {
-        clearTimeout(timeout);
-        console.log(msg.event);
-        s.destroy();
+        clearTimeout(timer); console.log(msg.event); s.destroy();
       }
     } catch {}
   }
 });
-" "$RELAY_SOCK" "540000" "work-queued" "task-completed" "worker-disconnected"
+" "$RELAY_SOCK" ".ai-queue" "540000" "work-queued" "task-completed" "worker-disconnected"
 ```
 
-| Event received | Action |
-|---------------|--------|
+**Why subscribe-first:** connecting to the relay registers the worker for future events. Scanning *after* connect means: work queued before connect is caught by the scan, work queued after connect is caught by the event. No gap.
+
+| Output | Action |
+|--------|--------|
+| `WORK_FOUND` | Pending files detected on immediate scan — re-enter main loop |
 | `work-queued` | Re-scan — new tasks available |
 | `task-completed` | Re-scan — a dependency may now be met |
 | `worker-disconnected` | Check for orphaned tasks, then re-scan |
 | `IDLE_TIMEOUT` (9 min) | Re-scan (safety net), then block again |
+
+**Pickup latency:** sub-second (scan is immediate after connect).
+**Safety net:** 9-min timeout still triggers a re-scan in case events are missed for any reason.
 
 ### Exiting while idle
 
