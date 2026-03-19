@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 2.4.0
+  version: 2.5.0
 ---
 
 # Scope
@@ -15,6 +15,7 @@ Interactive, approval-gated planning and orchestration. Every unit of work is re
 ```
 /scope {goal}          — start new initiative
 /scope                 — resume active initiative; if none, read SCOPE.md (non-empty) from repo root
+/scope setup           — scaffold repo for scope + q workflows (run once per repo)
 /scope status          — show hierarchy dashboard
 /scope update          — modify an active roadmap
 /scope watch           — monitor workers, verify tracking, then auto-resume
@@ -649,6 +650,86 @@ Interactively modify an active roadmap.
 3. If integration: close ticket with "Aborted. Work preserved."
 4. Send `epic-done` via relay (workers exit).
 5. Print where to find preserved work.
+
+---
+
+## `/scope setup`
+
+One-time repo scaffolding for `/scope` + `/q` workflows. Safe to re-run — idempotent.
+
+### Steps (all autonomous, no user interaction until summary)
+
+**1. Create directories**
+
+```bash
+mkdir -p .ai-plans .ai-queue/_completed
+```
+
+**2. Gitignore entries**
+
+Ensure `.gitignore` contains these entries (append if missing, don't duplicate):
+
+```
+# AI orchestration
+.ai-queue/
+.worktrees/
+```
+
+`.ai-plans/` is NOT gitignored — roadmaps are committed.
+
+**3. Create SCOPE.md**
+
+If `SCOPE.md` doesn't exist at repo root, create it empty. (It's the scratch pad for new initiatives.)
+
+**4. Configure integration**
+
+If `.ai-plans/config.yml` doesn't exist:
+
+1. Auto-detect available CLIs:
+   ```bash
+   command -v gh &>/dev/null && echo "github"
+   command -v linear &>/dev/null && echo "linear"
+   ```
+2. If `gh` is available and authenticated (`gh auth status`):
+   - Detect `owner` and `repo` from git remote: `gh repo view --json owner,name`
+   - Ask user for `project_number` (or skip if no project board)
+   - If project_number provided: resolve `project_node_id`, `status_field_id`, `status_options` via:
+     ```bash
+     gh project field-list $PROJECT_NUMBER --owner $OWNER --format json
+     ```
+   - Ensure labels exist: `gh label create epic --repo OWNER/REPO 2>/dev/null || true` (repeat for `saga`, `stage`)
+   - Write complete `config.yml`
+3. If no CLI detected: write `config.yml` with `integrations: []`
+
+If `.ai-plans/config.yml` exists: validate it (same as config validation on every run). Fix incomplete fields.
+
+**5. Verify relay**
+
+Start the relay if not running (standard relay startup sequence). Verify socket is responsive.
+
+**6. Print summary**
+
+```
+/scope setup — complete
+─────────────────────────────
+  ✓ .ai-plans/          created (or exists)
+  ✓ .ai-queue/          created (or exists)
+  ✓ .gitignore          updated (or already correct)
+  ✓ SCOPE.md            created (or exists)
+  ✓ config.yml          github (owner/repo, project #N)
+  ✓ Labels              epic, saga, stage verified
+  ✓ Relay               running (pid XXXX)
+
+Ready. Run `/scope {goal}` to start an initiative,
+or `/q` in a separate terminal to start a worker.
+```
+
+### Rules
+
+- Idempotent — safe to run multiple times.
+- Never destructive — never overwrites existing config, roadmaps, or queue files.
+- Only asks one question: project board number (if GitHub detected and no config exists). Everything else is auto-resolved.
+- If config exists but is incomplete (e.g., missing `status_options`), auto-resolve the missing fields without asking.
 
 ---
 
