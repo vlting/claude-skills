@@ -37,7 +37,7 @@ All files live directly in `.ai-queue/` (never subfolders). 3-digit zero-padded 
 | Being drafted | `XXX-wip.md` | `005-wip.md` |
 | Active | `XXX-active.md` | `003-active.md` |
 
-Next number = highest existing number + 1 (check all files including `_completed/`).
+Next number = highest existing number + 1 (scan only pending `XXX.md` and active `XXX-active.md` — ignore `_completed/`). Resets to `001` when queue is empty.
 
 ### Directives (in file header)
 
@@ -172,34 +172,58 @@ When the queue is empty (with or without blocked items), the worker does NOT exi
    - If `claim-denied` → skip this task, scan for next
    - **No file-based fallback.** Relay is the single source of truth for claims.
 2. **Execute:** See Task Execution below.
-3. **Archive:** Move to `_completed/{hash}.md` where hash = commit short SHA. Send `task-completed` event with key.
+3. **Archive:** Move to `_completed/{hash}.md` where hash = commit short SHA. Send `task-completed` event with key. Then send `release` to free the claim:
+   ```bash
+   node -e "
+   const s = require('net').connect(process.argv[1]);
+   s.write(JSON.stringify({type:'release',key:process.argv[2]})+'\n');
+   s.on('data', d => { s.destroy(); });
+   setTimeout(() => s.destroy(), 1000);
+   " "$RELAY_SOCK" "{NNN}:{ctime}"
+   ```
 4. **Context clear:** `/clear` between tasks. Each task starts with fresh context.
 5. **Loop back** to scan.
 
 ---
 
-## Orphan Recovery
+## Orphan Recovery (Relay-Coordinated)
 
-A task is orphaned when its claiming agent dies. Detection:
+A task is orphaned when its claiming agent dies. Recovery goes through the relay to prevent race conditions where two workers try to recover the same task.
 
-| Signal | Verdict |
-|--------|---------|
-| `worker-disconnected` relay event with task ID | Immediately orphaned |
-| PID present + `kill -0` fails | Orphaned |
-| LAT stale (>5 min) + PID dead | Orphaned |
-| LAT stale but PID alive | Agent is slow, **not** orphaned |
-| No PID + file mtime > 60s ago | Orphaned (claim crashed before completing) |
-| No PID + file mtime ≤ 60s ago | **Not** orphaned — claim in progress, skip and re-check next scan |
+**For each `XXX-active.md` file found during scan:**
 
-**Check file mtime** (for missing-PID cases):
-```bash
-# Returns age in seconds
-echo $(( $(date +%s) - $(stat -f %m "$FILE") ))
-```
+1. Extract the claim key from the file. The key format is `{NNN}:{ctime}` — get `NNN` from the filename, `ctime` from the file's `stat -f %B` (macOS) or `stat -c %W` (Linux).
 
-**Recovery:** Rename `XXX-active.md` → `XXX.md` (back to pending). Clear LAT/PID/worktree headers. The task re-enters the queue for any worker to claim.
+2. Send `recover` to relay:
+   ```bash
+   node -e "
+   const s = require('net').connect(process.argv[1]);
+   s.write(JSON.stringify({type:'recover',key:process.argv[2]})+'\n');
+   s.on('data', d => {
+     for (const l of d.toString().split('\n').filter(Boolean)) {
+       try { const r = JSON.parse(l); console.log(r.type); } catch {}
+     }
+     s.destroy();
+   });
+   setTimeout(() => s.destroy(), 2000);
+   " "$RELAY_SOCK" "{NNN}:{ctime}"
+   ```
 
-If a worktree exists for the orphaned task, check for uncommitted work. If salvageable, commit it before cleanup. If not, remove the worktree.
+3. **`recover-granted`** → The relay confirmed the owner PID is dead (or no claim exists). Recover the task:
+   - Rename `XXX-active.md` → `XXX.md` (back to pending)
+   - Clear `LAT`, `PID`, `worktree`, `branch` headers
+   - If a worktree exists, check for uncommitted work. If salvageable, commit before cleanup. If not, remove the worktree.
+
+4. **`recover-denied`** → The owner PID is still alive. Skip — the task is not orphaned.
+
+5. **Relay unavailable** → Fall back to local PID check:
+   - Extract PID from `<!-- PID: ... -->` header
+   - `kill -0 $PID` succeeds → skip (not orphaned)
+   - `kill -0 $PID` fails → recover (rename to pending, clear headers)
+   - No PID + file mtime > 60s → recover
+   - No PID + file mtime ≤ 60s → skip (claim in progress)
+
+The relay's `recover` handler is atomic — only one worker can win the recovery for a given key. This eliminates the race where two workers both detect the same orphan and both try to claim it.
 
 ---
 

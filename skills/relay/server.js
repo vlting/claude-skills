@@ -62,6 +62,7 @@ function handleMessage(socket, info, msg) {
         send(socket, { type: 'claim-denied', key, holder: claims.get(key) });
       } else {
         claims.set(key, info.pid);
+        info.tasks.add(key);
         send(socket, { type: 'claim-granted', key });
         broadcast({
           type: 'event',
@@ -84,6 +85,51 @@ function handleMessage(socket, info, msg) {
       }
       // Broadcast to all other clients
       broadcast(msg, socket);
+      break;
+    }
+
+    case 'recover': {
+      // Server-side PID liveness check for orphan recovery.
+      // If no claim exists → recover-granted (task was never claimed or already released).
+      // If claim exists → check if owner PID is alive:
+      //   alive → recover-denied (task still owned)
+      //   dead  → delete claim, recover-granted
+      const key = msg.key;
+      if (!claims.has(key)) {
+        send(socket, { type: 'recover-granted', key });
+      } else {
+        const ownerPid = claims.get(key);
+        let alive = false;
+        try { process.kill(ownerPid, 0); alive = true; } catch {}
+        if (alive) {
+          send(socket, { type: 'recover-denied', key, holder: ownerPid });
+        } else {
+          claims.delete(key);
+          // Remove from any client's task set
+          for (const [, c] of clients) { c.tasks.delete(key); }
+          send(socket, { type: 'recover-granted', key });
+          broadcast({
+            type: 'event',
+            event: 'task-recovered',
+            recoveredBy: info.pid,
+            key,
+          }, socket);
+        }
+      }
+      break;
+    }
+
+    case 'release': {
+      // Explicit claim release — worker finished or is cleaning up.
+      const key = msg.key;
+      if (claims.get(key) === info.pid) {
+        claims.delete(key);
+        info.tasks.delete(key);
+        send(socket, { type: 'release-ack', key });
+      } else {
+        // Not the owner — no-op but acknowledge
+        send(socket, { type: 'release-ack', key, note: 'not-owner' });
+      }
       break;
     }
 
@@ -136,6 +182,10 @@ const server = net.createServer(socket => {
     clients.delete(socket);
 
     if (disconnected && disconnected.pid) {
+      // Broadcast for awareness only — do NOT delete claims here.
+      // The PID (Agent subprocess) may still be alive even after the
+      // short-lived socket disconnects. Claims are released explicitly
+      // via 'release' or reclaimed via 'recover' with PID liveness check.
       broadcast({
         type: 'event',
         event: 'worker-disconnected',
