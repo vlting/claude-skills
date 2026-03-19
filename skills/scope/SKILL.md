@@ -501,25 +501,20 @@ Three sequential phases, fully autonomous (no user interaction until next gate):
    - All tasks moved to `_completed/` → proceed to Phase B
    - 9 minutes elapsed with tasks remaining → print status, ask user whether to extend or intervene
 
-**Phase B: Verify GitHub Tracking**
+**Phase B: Clean**
 
-Once all tasks complete, audit integration side-effects for the current stage:
+Once all tasks complete, run `/scope clean` (the full 5-pass audit) **before doing anything else**. Workers often leave tracking gaps — stale board statuses, missing PR checkoffs, roadmap drift. Clean fixes all of it.
 
-1. **Stage issue exists** and is in correct board status (In Progress)
-2. **Epic PR body** has current stage listed (unchecked is fine — that happens in ADVANCE)
-3. **Saga issue body** has current epic listed
-4. **All completed task branches** merged to stage branch (workers handle this, but verify)
-5. **No orphaned issues/PRs** from this stage
-
-Fix any gaps silently (create missing issues, update board status, edit PR bodies). Print a one-line summary of what was fixed, or "Tracking clean — no fixes needed."
+This is not a lightweight check. It is the real `/scope clean` — Pass 0 through Pass 4, autonomous, no user interaction.
 
 **Phase C: Resume Flow**
 
-Continue the `/scope` lifecycle as if the user ran `/scope`:
-1. Read roadmap frontmatter → current phase should be `execute`
-2. Transition to **VERIFY** — run build/lint/test, check acceptance criteria
-3. Present the `[VERIFY]` Review Card for user approval
-4. On approval → ADVANCE → next stage BREAKDOWN (or SHIP if final stage)
+After clean completes, resume as if `/scope watch` was called fresh:
+1. Re-read roadmap frontmatter (clean may have updated it)
+2. If phase is still `execute` and tasks remain → return to **Phase A** (monitor again)
+3. If all tasks complete → transition to **VERIFY** — run build/lint/test, check acceptance criteria
+4. Present the `[VERIFY]` Review Card for user approval
+5. On approval → ADVANCE → next stage BREAKDOWN (or SHIP if final stage)
 
 This is the standard `/scope` resume flow from Phase 4 onward — watch simply automates the wait.
 
@@ -538,8 +533,8 @@ Use the `/loop` skill pattern internally — but `/scope watch` is a single invo
 - **No user interaction during Phase A/B.** Only Phase C (VERIFY gate) requires approval.
 - **Re-send relay events** if workers appear stalled (no new completions for 2+ minutes).
 - **9-minute ceiling is soft.** If 6/7 tasks done at 9 min, extend 3 min automatically. Only prompt if <50% done at 9 min.
-- **Phase B is mandatory.** Never skip tracking verification, even if all tasks completed quickly.
-- **Phase C is standard /scope resume.** Same gates, same rules as `/scope` with no arguments.
+- **Phase B is mandatory.** Never skip `/scope clean` after workers finish, even if all tasks completed quickly. Workers leave messes.
+- **Phase C re-evaluates.** After clean, re-read roadmap state — don't assume tasks are still complete. If clean revealed issues, loop back to Phase A.
 
 ---
 
