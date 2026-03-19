@@ -557,17 +557,20 @@ Full-initiative audit + repair. Derives truth from **shipped code** (merged PRs,
 
 **Pass 0: Sync Local Branches**
 
-Update all local tracking branches to match their remote counterparts:
+Update all local tracking branches to match their remote counterparts, then sync epic branches with main:
 ```bash
 git fetch origin
 # For each epic branch referenced in roadmap:
 git checkout epic/{slug} && git reset --hard origin/epic/{slug}
+# Merge main into epic branch to keep it current:
+git merge main --no-edit
+git push origin epic/{slug}
 # For the current stage branch (if exists):
 git checkout {prefix}/{slug}/{stage-slug} && git reset --hard origin/{prefix}/{slug}/{stage-slug}
 # Return to original branch
 git checkout {original-branch}
 ```
-This prevents stale local branches from causing incorrect audit results or bad rebases.
+This prevents stale local branches from causing incorrect audit results or bad rebases. Merging main into epic branches ensures stage PRs won't have stale bases.
 
 **Pass 1: Code → Roadmap**
 
@@ -587,11 +590,17 @@ For each epic/stage in the roadmap:
 
 **Pass 3: Roadmap → GitHub PRs**
 
-For each epic with a PR:
-1. Verify PR body has all stages in checklist format
-2. Done stages checked off with PR link: `- [x] Stage N: title (#PR)`
-3. In-progress/pending stages unchecked: `- [ ] Stage N: title`
-4. Fix mismatches (missing checkoffs, missing PR links, missing entries)
+For each epic in the roadmap:
+1. **If NO epic PR exists** (check `gh pr list --head epic/{slug}`):
+   - Create the epic PR targeting `main` from `epic/{slug}`
+   - Title: the epic title from the roadmap (or parent issue)
+   - Body: summary from roadmap/issue + stages checklist (`- [ ] Stage N: title` for each stage) + `Closes #{epic_issue}` if issue exists
+   - Label the PR with `epic`
+   - Write PR number back to roadmap metadata
+2. **If epic PR exists:** Verify PR body has all stages in checklist format
+3. Done stages checked off with PR link: `- [x] Stage N: title (#PR)`
+4. In-progress/pending stages unchecked: `- [ ] Stage N: title`
+5. Fix mismatches (missing checkoffs, missing PR links, missing stage entries)
 
 **Pass 4: Board Status**
 
