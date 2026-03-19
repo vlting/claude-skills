@@ -22,6 +22,8 @@ Commit and push with confirmation.
    - Show a summary of what will be committed (files changed)
 
 5. On approval:
+   - `git fetch origin {branch}` and `git rebase origin/{branch}`
+   - If rebase conflicts → stop, report conflicts, do NOT continue
    - Stage changes, commit (conventional commit), push
    - If worktree: merge onto the target branch, push, clean up worktree
 
