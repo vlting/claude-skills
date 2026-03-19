@@ -77,13 +77,7 @@ Feed the EXPLORE context brief into the council invocation so it doesn't duplica
 
 Output: reconciled council plan.
 
-**⚠️ STOP. Do NOT proceed to ENQUEUE. The next step is PRESENT — you must show the plan and call `AskUserQuestion`. Council finishing does NOT mean the user has approved.**
-
-**⚠️ MANDATORY RECALL:** Before proceeding, recall constraints from memory MCP:
-```
-recall-constraints: query "think PRESENT gate AskUserQuestion approval", type: "feedback", limit: 5
-```
-Read the recalled feedback. It will remind you of the approval gate requirement. Then proceed to PRESENT.
+**⚠️ STOP. Do NOT proceed to ENQUEUE. The next step is PRESENT.**
 
 ---
 
@@ -91,11 +85,19 @@ Read the recalled feedback. It will remind you of the approval gate requirement.
 
 **This phase is NON-NEGOTIABLE. Skipping it is a contract violation.**
 
-After council returns, you MUST:
-1. **Recall constraints** from memory MCP (see above) — this is a hard gate, not optional
-2. Format the review card below
-3. Call `AskUserQuestion` with approve / reject / refine options
-4. WAIT for the user's response before doing anything else
+**STEP 1 — RECALL (hard gate, do this FIRST, before anything else in this phase):**
+```
+recall-constraints: query "think PRESENT gate AskUserQuestion approval", type: "feedback", limit: 5
+```
+Read the recalled feedback carefully. It will remind you of the approval gate requirement.
+
+**STEP 2 — FORMAT** the review card below.
+
+**STEP 3 — CALL `AskUserQuestion`** with approve / reject / refine options.
+
+**STEP 4 — WAIT** for the user's response before doing anything else.
+
+**⚠️ Informal approval does NOT satisfy this gate.** If the user said "looks good" or "implement it" in a normal message — that does NOT count. You MUST still call `AskUserQuestion` and receive a response through it. The gate requires a formal `AskUserQuestion` → user response round-trip. No exceptions, no rationalization.
 
 Display the plan as a review card:
 
@@ -142,7 +144,7 @@ On `reject`: print "Aborted." and return to normal conversation.
 
 ## Phase 4: ENQUEUE
 
-**PREREQUISITE:** User MUST have responded "approve" to an `AskUserQuestion` call. If you have not called `AskUserQuestion` yet, STOP — go back to Phase 3.
+**PREREQUISITE:** User MUST have responded "approve" to an `AskUserQuestion` call. Informal approval via normal message does NOT count. If you have not called `AskUserQuestion` and received a response through it, STOP — go back to Phase 3.
 
 On `approve`:
 
@@ -185,12 +187,11 @@ Read `~/.claude/skills/memory/MEMORY_OPS.md` for tool call templates.
 
 | Point | Action |
 |-------|--------|
-| **Skill entry** | `recall-constraints` with "think orchestrator approval gate" (feedback, global). Surfaces PRESENT-gate feedback. |
-| **PLAN → PRESENT transition** | `recall-constraints` with "think PRESENT gate AskUserQuestion approval" (feedback, global). **This is a hard gate — do not skip.** Read results before proceeding. |
+| **PRESENT phase, Step 1 (before formatting card)** | `recall-constraints` with "think PRESENT gate AskUserQuestion approval" (feedback, global). **Hard gate — do this before anything else in PRESENT.** Read results before formatting or calling AskUserQuestion. |
 | **After user approves** | `store-decision` if non-obvious plan choices were made |
 | **After user refines** | `store-feedback` with the refinement reasoning |
 
-**Why recall twice?** The PLAN→PRESENT transition is the exact failure point. Recalling constraints there forces the agent to pause and read feedback about the approval gate before continuing. Context compression or long council output can push earlier instructions out of working memory — the recall restores them.
+**Why recall at PRESENT entry?** This is the exact failure point. Council output is long and can push skill instructions out of working memory. The recall restores the approval-gate constraint right when it matters — before the agent decides whether to ask or skip.
 
 ---
 
