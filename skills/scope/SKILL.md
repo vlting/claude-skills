@@ -237,7 +237,13 @@ Stage {N}: {title} — {count} tasks
 ```
 
 5. **On approval:**
-   - Create stage branch: `git checkout epic/{slug} && git checkout -b {prefix}/{slug}/{stage-slug}`
+   - Sync local epic branch before branching:
+     ```bash
+     git fetch origin epic/{slug}
+     git checkout epic/{slug}
+     git reset --hard origin/epic/{slug}
+     ```
+   - Create stage branch: `git checkout -b {prefix}/{slug}/{stage-slug}`
    - **Integration: create stage sub-ticket** — `create-ticket` for the stage, linking to parent epic issue. Add to project board in **Todo** status.
    - Write task instruction files to `.ai-queue/`:
      ```markdown
@@ -302,11 +308,12 @@ Risk:     {assessment}
 
 > **Protocol:** Read `references/branch-protocol.md` before creating any PR. Stage PRs MUST target `epic/{slug}`, never `main`.
 
-1. **Validate PR target** — assert base branch is `epic/{slug}`:
+1. **Validate PR target** — assert base branch is `epic/{slug}`, sync local:
    ```bash
    BASE="epic/${SLUG}"
-   # Verify epic branch exists and is up to date
    git fetch origin "$BASE" || { echo "ERROR: epic branch $BASE not found"; exit 1; }
+   git checkout "$BASE"
+   git reset --hard "origin/$BASE"
    ```
 
 2. **Create stage PR** to epic branch:
@@ -546,7 +553,21 @@ Full-initiative audit + repair. Derives truth from **shipped code** (merged PRs,
 3. **GH issues/PRs** — updated to reflect roadmap
 4. **Board** — updated to reflect issue/PR state
 
-### Four Audit Passes (all autonomous, no user interaction)
+### Five Audit Passes (all autonomous, no user interaction)
+
+**Pass 0: Sync Local Branches**
+
+Update all local tracking branches to match their remote counterparts:
+```bash
+git fetch origin
+# For each epic branch referenced in roadmap:
+git checkout epic/{slug} && git reset --hard origin/epic/{slug}
+# For the current stage branch (if exists):
+git checkout {prefix}/{slug}/{stage-slug} && git reset --hard origin/{prefix}/{slug}/{stage-slug}
+# Return to original branch
+git checkout {original-branch}
+```
+This prevents stale local branches from causing incorrect audit results or bad rebases.
 
 **Pass 1: Code → Roadmap**
 
@@ -738,7 +759,8 @@ or `/q` in a separate terminal to start a worker.
 `SCOPE.md` at repo root is the user's scratch pad for defining new initiatives. **Empty `SCOPE.md` = no pending scope** (equivalent to the file not existing). Never delete `SCOPE.md` — only empty it.
 
 1. Scan `.ai-plans/` for roadmaps with `status` not `done` or `aborted`
-2. **Active roadmap(s) found:**
+2. **Sync local branches:** `git fetch origin`, then for each epic/stage branch in the active roadmap, update local to match remote (`git checkout {branch} && git reset --hard origin/{branch}`). Return to original branch.
+3. **Active roadmap(s) found:**
    - If one → resume: read YAML frontmatter → determine current phase → re-enter flow at correct gate
    - If multiple → `AskUserQuestion` which to resume
    - If `SCOPE.md` has content → `AskUserQuestion`: resume active initiative or start new one from `SCOPE.md`?
