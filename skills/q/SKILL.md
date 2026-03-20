@@ -347,7 +347,7 @@ When a worker claims a task:
    PREVIEW_PID=$!
    ```
 
-   Display summary:
+   Display summary — print the full clickable URL so the user can open it directly:
    ```markdown
    ## Preview: q-{NNN} — {task-title}
    **Playground:** http://localhost:{PORT}
