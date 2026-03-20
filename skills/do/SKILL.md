@@ -102,8 +102,13 @@ When the agent returns:
    (cd {worktree_path} && yarn dev:playground --port $PORT &)
    PREVIEW_PID=$!
    ```
-   Add to the summary — print the full clickable URL so the user can open it directly:
+   Add to the summary:
    `**Preview:** http://localhost:{PORT}`
+
+   Open the playground in the user's default browser:
+   ```bash
+   open "http://localhost:$PORT"
+   ```
 
 4. **If `--yolo`:** kill the preview server (`kill $PREVIEW_PID 2>/dev/null`), skip to Step 5 (merge).
 5. **Otherwise:** `AskUserQuestion`:

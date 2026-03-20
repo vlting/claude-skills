@@ -350,12 +350,17 @@ When a worker claims a task:
    PREVIEW_PID=$!
    ```
 
-   Display summary — print the full clickable URL so the user can open it directly:
+   Display summary:
    ```markdown
    ## Preview: q-{NNN} — {task-title}
    **Playground:** http://localhost:{PORT}
    **Branch:** `q-{NNN}`
    **Worktree:** `.worktrees/q-{NNN}`
+   ```
+
+   Open the playground in the user's default browser:
+   ```bash
+   open "http://localhost:$PORT"
    ```
 
    Then `AskUserQuestion`:
