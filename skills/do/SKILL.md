@@ -91,23 +91,25 @@ When the agent returns:
 
 3. **Start playground preview** in the worktree:
    ```bash
-   # Find available port (try 5174, then increment)
-   PORT=5174
-   while lsof -i :$PORT >/dev/null 2>&1; do PORT=$((PORT+1)); done
-
    # Symlink node_modules so the worktree can resolve dependencies
    ln -sf "$(pwd)/node_modules" {worktree_path}/node_modules
 
-   # Start playground dev server in the worktree
-   (cd {worktree_path} && yarn dev:playground --port $PORT &)
+   # Start dev server (Vite auto-picks a free port)
+   cd {worktree_path} && yarn dev:playground > /tmp/do-preview-$$.log 2>&1 &
    PREVIEW_PID=$!
+
+   # Wait for Vite to print the URL, then extract it
+   for i in $(seq 1 30); do
+     URL=$(grep -oE 'http://localhost:[0-9]+/?' /tmp/do-preview-$$.log 2>/dev/null | head -1)
+     [ -n "$URL" ] && break
+     sleep 1
+   done
    ```
-   Add to the summary:
-   `**Preview:** http://localhost:{PORT}`
+   Add to the summary: `**Preview:** {URL}`
 
    Open the playground in the user's default browser:
    ```bash
-   open "http://localhost:$PORT"
+   open "$URL"
    ```
 
 4. **If `--yolo`:** kill the preview server (`kill $PREVIEW_PID 2>/dev/null`), skip to Step 5 (merge).

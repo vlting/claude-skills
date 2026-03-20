@@ -338,29 +338,32 @@ When a worker claims a task:
    If the `--preview` flag is active, pause before merging:
 
    ```bash
-   # Find available port (try 5174, then increment)
-   PORT=5174
-   while lsof -i :$PORT >/dev/null 2>&1; do PORT=$((PORT+1)); done
-
    # Symlink node_modules so the worktree can resolve dependencies
    ln -sf "$(pwd)/node_modules" .worktrees/q-{NNN}/node_modules
 
-   # Start playground dev server in the worktree
-   (cd .worktrees/q-{NNN} && yarn dev:playground --port $PORT &)
+   # Start dev server (Vite auto-picks a free port)
+   cd .worktrees/q-{NNN} && yarn dev:playground > /tmp/q-preview-{NNN}.log 2>&1 &
    PREVIEW_PID=$!
+
+   # Wait for Vite to print the URL, then extract it
+   for i in $(seq 1 30); do
+     URL=$(grep -oE 'http://localhost:[0-9]+/?' /tmp/q-preview-{NNN}.log 2>/dev/null | head -1)
+     [ -n "$URL" ] && break
+     sleep 1
+   done
    ```
 
    Display summary:
    ```markdown
    ## Preview: q-{NNN} — {task-title}
-   **Playground:** http://localhost:{PORT}
+   **Playground:** {URL}
    **Branch:** `q-{NNN}`
    **Worktree:** `.worktrees/q-{NNN}`
    ```
 
    Open the playground in the user's default browser:
    ```bash
-   open "http://localhost:$PORT"
+   open "$URL"
    ```
 
    Then `AskUserQuestion`:
