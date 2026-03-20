@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 1.0.0
+  version: 1.1.0
 ---
 
 # Do
@@ -38,14 +38,32 @@ No queue files. No relay. No drain loop. Just: isolate → execute → confirm �
 - If no instructions provided → `AskUserQuestion`: "What should I do?"
 - Record the current branch: `git rev-parse --abbrev-ref HEAD` → `$ORIGIN_BRANCH`
 
-### Step 2: EXECUTE
+### Step 2: CREATE WORKTREE
 
-Spawn a single Agent:
+**IMPORTANT:** Do NOT use `Agent(isolation: "worktree")` — it branches from `origin/main` instead of the current HEAD. Create the worktree manually:
+
+```bash
+WORKTREE_ID="do-$(date +%s)"
+WORKTREE_PATH=".worktrees/$WORKTREE_ID"
+WORKTREE_BRANCH="do/$WORKTREE_ID"
+
+git worktree add -b "$WORKTREE_BRANCH" "$WORKTREE_PATH"
+```
+
+This branches from the current HEAD, preserving all local work.
+
+Symlink `node_modules` so the worktree can resolve dependencies:
+```bash
+ln -sf "$(pwd)/node_modules" "$WORKTREE_PATH/node_modules"
+```
+
+### Step 3: EXECUTE
+
+Spawn a single Agent — **no `isolation` parameter** (the worktree already exists):
 
 ```
 Agent(
   prompt: <see worker prompt below>,
-  isolation: "worktree",
   mode: "bypassPermissions",
   description: "do: <first 5 words of instructions>"
 )
@@ -58,49 +76,49 @@ You are a worker. Execute this task completely:
 
 {instructions}
 
+Your working directory is: {absolute path to worktree}
+All file reads, edits, and git commands MUST use this directory.
+Do NOT modify files outside this worktree.
+
 Rules:
 - Implement the task fully. Do not ask questions.
 - Commit your work with a conventional commit message.
 - If you encounter a blocker you cannot resolve, commit what you have
   and note the blocker in your commit message.
-- Read any relevant AI_CONSTITUTION.md, DESIGN_CONSTITUTION.md,
-  or *.spec.md files before making changes.
+- Read any relevant CONSTITUTION.md, *.spec.md, or *.ai.md files
+  before making changes.
 - All styling via STL (styled() or stl prop). No plain style={}.
 - Use STL shorthands (bg, p, px, radius, etc).
 ```
 
-### Step 3: CONFIRM
+### Step 4: CONFIRM
 
 When the agent returns:
 
-1. Parse the result for the worktree path and branch name
-2. Show the user a summary:
+1. Show the user a summary:
 
 ```markdown
 ## `/do` complete
 
-**Branch:** `{worktree_branch}`
-**Worktree:** `{worktree_path}`
+**Branch:** `{WORKTREE_BRANCH}`
+**Worktree:** `{WORKTREE_PATH}`
 
 ### Changes
 {agent's summary of what was done}
 
 ### Diff
-{run `git -C {worktree_path} diff HEAD~1` to show the committed diff}
+{run `git -C {WORKTREE_PATH} diff HEAD~1` to show the committed diff}
 ```
 
-3. **Start playground preview** in the worktree:
+2. **Start playground preview** in the worktree:
    ```bash
-   # Symlink node_modules so the worktree can resolve dependencies
-   ln -sf "$(pwd)/node_modules" {worktree_path}/node_modules
-
    # Start dev server (Vite auto-picks a free port)
-   cd {worktree_path} && yarn dev:playground > /tmp/do-preview-$$.log 2>&1 &
+   cd {WORKTREE_PATH} && yarn dev:playground > /tmp/$WORKTREE_ID.log 2>&1 &
    PREVIEW_PID=$!
 
    # Wait for Vite to print the URL, then extract it
    for i in $(seq 1 30); do
-     URL=$(grep -oE 'http://localhost:[0-9]+/?' /tmp/do-preview-$$.log 2>/dev/null | head -1)
+     URL=$(grep -oE 'http://localhost:[0-9]+/?' /tmp/$WORKTREE_ID.log 2>/dev/null | head -1)
      [ -n "$URL" ] && break
      sleep 1
    done
@@ -112,10 +130,10 @@ When the agent returns:
    open "$URL"
    ```
 
-4. **If `--yolo`:** kill the preview server (`kill $PREVIEW_PID 2>/dev/null`), skip to Step 5 (merge).
-5. **Otherwise:** `AskUserQuestion`:
+3. **If `--yolo`:** kill the preview server (`kill $PREVIEW_PID 2>/dev/null`), skip to Step 5 (merge).
+4. **Otherwise:** `AskUserQuestion`:
    - **merge** — merge into `$ORIGIN_BRANCH` and clean up
-   - **open** — open the worktree in VS Code (`code {worktree_path}`) for manual review, then ask again
+   - **open** — open the worktree in VS Code (`code {WORKTREE_PATH}`) for manual review, then ask again
    - **discard** — delete worktree, no merge
 
 After merge or discard, kill the preview server: `kill $PREVIEW_PID 2>/dev/null`
@@ -127,14 +145,14 @@ After merge or discard, kill the preview server: `kill $PREVIEW_PID 2>/dev/null`
 git checkout $ORIGIN_BRANCH
 
 # Merge the worktree branch
-git merge {worktree_branch} --no-edit
+git merge $WORKTREE_BRANCH --no-edit
 
 # Clean up worktree
-git worktree remove {worktree_path} --force
+git worktree remove $WORKTREE_PATH --force
 git worktree prune
 
 # Delete the temporary branch
-git branch -d {worktree_branch}
+git branch -d $WORKTREE_BRANCH
 ```
 
 After merge, confirm: "Merged and cleaned up. You're on `$ORIGIN_BRANCH`."
@@ -142,9 +160,9 @@ After merge, confirm: "Merged and cleaned up. You're on `$ORIGIN_BRANCH`."
 ### Step 5 (alt): DISCARD
 
 ```bash
-git worktree remove {worktree_path} --force
+git worktree remove $WORKTREE_PATH --force
 git worktree prune
-git branch -D {worktree_branch}
+git branch -D $WORKTREE_BRANCH
 ```
 
 Confirm: "Discarded. No changes applied."
@@ -153,7 +171,7 @@ Confirm: "Discarded. No changes applied."
 
 ## Edge cases
 
-- **Agent makes no changes:** worktree auto-cleans. Report "No changes made" and exit.
+- **Agent makes no changes:** remove worktree, report "No changes made" and exit.
 - **Merge conflict:** Report the conflict, suggest `open` so user can resolve manually.
 - **Agent returns error:** Show the error, offer `open` or `discard`.
 
@@ -164,5 +182,6 @@ Confirm: "Discarded. No changes applied."
 1. **Never queue.** `/do` is not `/q`. No queue files, no relay, no drain.
 2. **One task, one agent.** No parallelism within `/do`.
 3. **Always return to `$ORIGIN_BRANCH`** after merge or discard.
-4. **Worktree placement:** `.worktrees/do-{timestamp}` subfolder convention.
+4. **Worktree placement:** `.worktrees/do-{id}` subfolder convention.
 5. **Confirmation is default.** `--yolo` is opt-in.
+6. **Never use `Agent(isolation: "worktree")`** — it branches from `origin/main`, not HEAD. Always create the worktree manually with `git worktree add`.
