@@ -342,6 +342,9 @@ When a worker claims a task:
    PORT=5174
    while lsof -i :$PORT >/dev/null 2>&1; do PORT=$((PORT+1)); done
 
+   # Symlink node_modules so the worktree can resolve dependencies
+   ln -sf "$(pwd)/node_modules" .worktrees/q-{NNN}/node_modules
+
    # Start playground dev server in the worktree
    (cd .worktrees/q-{NNN} && yarn dev:playground --port $PORT &)
    PREVIEW_PID=$!
