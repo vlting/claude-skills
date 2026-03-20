@@ -21,6 +21,9 @@ Flags (enqueue only):
 - `--no-segment` — single task, no file-disjoint splitting
 - `--no-auto` — create task but don't start draining
 
+Flags (drain only):
+- `--preview` — pause before merging each task: spin up a playground in the worktree, ask user to approve/discard (see Preview Gate)
+
 ---
 
 ## Queue Folder
@@ -330,7 +333,40 @@ When a worker claims a task:
 
 4. **Commit:** Conventional commit message. Stage only the files specified in the task.
 
-5. **Merge to target branch:**
+5. **Preview Gate (only when `--preview`):**
+
+   If the `--preview` flag is active, pause before merging:
+
+   ```bash
+   # Find available port (try 5174, then increment)
+   PORT=5174
+   while lsof -i :$PORT >/dev/null 2>&1; do PORT=$((PORT+1)); done
+
+   # Start playground dev server in the worktree
+   (cd .worktrees/q-{NNN} && yarn dev:playground --port $PORT &)
+   PREVIEW_PID=$!
+   ```
+
+   Display summary:
+   ```markdown
+   ## Preview: q-{NNN} — {task-title}
+   **Playground:** http://localhost:{PORT}
+   **Branch:** `q-{NNN}`
+   **Worktree:** `.worktrees/q-{NNN}`
+   ```
+
+   Then `AskUserQuestion`:
+   - **merge** — proceed to merge and clean up
+   - **discard** — skip merge, remove worktree, archive as skipped
+
+   **After response (merge or discard):** kill the preview server:
+   ```bash
+   kill $PREVIEW_PID 2>/dev/null
+   ```
+
+   On **discard**: skip steps 6–8, jump straight to cleanup (step 7) and archive. Do NOT merge.
+
+6. **Merge to target branch:**
    ```bash
    cd {repo-root}
    git checkout {target-branch}
@@ -340,13 +376,13 @@ When a worker claims a task:
    git push origin {target-branch}
    ```
 
-6. **Cleanup:**
+7. **Cleanup:**
    ```bash
    git worktree remove .worktrees/q-{NNN} --force
    git branch -D q-{NNN}
    ```
 
-7. **Archive:** Rename to `_completed/{commit-hash}.md`. Send `task-completed` event with key `{NNN}:{ctime}`.
+8. **Archive:** Rename to `_completed/{commit-hash}.md`. Send `task-completed` event with key `{NNN}:{ctime}`.
 
 ---
 

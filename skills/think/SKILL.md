@@ -171,13 +171,14 @@ Args: Implement the following plan:\n\n{full_plan_text}\n\nGoal: {goal}
 
 ## Phase 5: EXECUTE
 
-Immediately after enqueue completes, invoke `/q` bare to enter worker mode:
+Immediately after enqueue completes, invoke `/q` with `--preview` to enter worker mode:
 
 ```
 Skill: q
+Args: --preview
 ```
 
-This starts the drain loop. The current agent becomes a worker and processes its own queued tasks. Other workers can pick up remaining tasks in parallel from other terminals.
+This starts the drain loop with preview gates. Before merging each task, the worker spins up a playground dev server in the worktree so the user can visually review changes before approving. Other workers can pick up remaining tasks in parallel from other terminals.
 
 ---
 

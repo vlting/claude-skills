@@ -89,13 +89,27 @@ When the agent returns:
 {run `git -C {worktree_path} diff HEAD~1` to show the committed diff}
 ```
 
-3. **If `--yolo`:** skip to Step 4 (merge).
-4. **Otherwise:** `AskUserQuestion`:
+3. **Start playground preview** in the worktree:
+   ```bash
+   # Find available port (try 5174, then increment)
+   PORT=5174
+   while lsof -i :$PORT >/dev/null 2>&1; do PORT=$((PORT+1)); done
+
+   # Start playground dev server in the worktree
+   (cd {worktree_path} && yarn dev:playground --port $PORT &)
+   PREVIEW_PID=$!
+   ```
+   Add to the summary: `**Preview:** http://localhost:{PORT}`
+
+4. **If `--yolo`:** kill the preview server (`kill $PREVIEW_PID 2>/dev/null`), skip to Step 5 (merge).
+5. **Otherwise:** `AskUserQuestion`:
    - **merge** — merge into `$ORIGIN_BRANCH` and clean up
    - **open** — open the worktree in VS Code (`code {worktree_path}`) for manual review, then ask again
    - **discard** — delete worktree, no merge
 
-### Step 4: MERGE
+After merge or discard, kill the preview server: `kill $PREVIEW_PID 2>/dev/null`
+
+### Step 5: MERGE
 
 ```bash
 # Ensure we're on the origin branch
@@ -114,7 +128,7 @@ git branch -d {worktree_branch}
 
 After merge, confirm: "Merged and cleaned up. You're on `$ORIGIN_BRANCH`."
 
-### Step 4 (alt): DISCARD
+### Step 5 (alt): DISCARD
 
 ```bash
 git worktree remove {worktree_path} --force
