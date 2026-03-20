@@ -237,34 +237,7 @@ When no immediately claimable tasks exist, the worker stays connected to the rel
 **Subscribe-first-then-scan** to eliminate the race where `work-queued` fires between the scan and the relay connect:
 
 ```bash
-node -e "
-const fs = require('fs');
-const net = require('net');
-const sock = process.argv[1];
-const queueDir = process.argv[2];
-const timeout = +process.argv[3] || 540000;
-const events = new Set(process.argv.slice(4));
-const s = net.connect(sock);
-const timer = setTimeout(() => { console.log('IDLE_TIMEOUT'); s.destroy(); }, timeout);
-s.once('connect', () => {
-  s.write(JSON.stringify({type:'identify',pid:process.env.PPID||0})+'\n');
-  // Scan AFTER subscribing — closes the race window
-  try {
-    const pending = fs.readdirSync(queueDir).filter(f => /^\d{3}\.md$/.test(f));
-    if (pending.length) { clearTimeout(timer); console.log('WORK_FOUND'); s.destroy(); return; }
-  } catch {}
-});
-s.on('data', d => {
-  for (const line of d.toString().split('\n').filter(Boolean)) {
-    try {
-      const msg = JSON.parse(line);
-      if (msg.type === 'event' && events.has(msg.event)) {
-        clearTimeout(timer); console.log(msg.event); s.destroy();
-      }
-    } catch {}
-  }
-});
-" "$RELAY_SOCK" ".ai-queue" "540000" "work-queued" "task-completed" "worker-disconnected"
+node ~/.claude/skills/q/relay-listen.js "$RELAY_SOCK" ".ai-queue" "540000" "work-queued" "task-completed" "worker-disconnected"
 ```
 
 **Why subscribe-first:** connecting to the relay registers the worker for future events. Scanning *after* connect means: work queued before connect is caught by the scan, work queued after connect is caught by the event. No gap.
