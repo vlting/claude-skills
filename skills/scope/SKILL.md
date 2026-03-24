@@ -698,13 +698,14 @@ Ensure `.gitignore` contains these entries (append if missing, don't duplicate):
 # AI orchestration
 .ai-queue/
 .worktrees/
+SCOPE.md
 ```
 
 `.ai-plans/` is NOT gitignored — roadmaps are committed.
 
 **3. Create SCOPE.md**
 
-If `SCOPE.md` doesn't exist at repo root, create it empty. (It's the scratch pad for new initiatives.)
+If `SCOPE.md` doesn't exist at repo root, create it empty. (It's the scratch pad for new initiatives — gitignored, never committed.)
 
 **4. Configure integration**
 

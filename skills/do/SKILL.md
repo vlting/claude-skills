@@ -42,7 +42,7 @@ No queue files. No relay. No drain loop. Just: isolate → execute → confirm �
 **If no inline instructions provided (bare `/do`):**
 
 1. Check for `$REPO_ROOT/DO.md`.
-2. **File does not exist** → create an empty `DO.md` at repo root. Tell the user:
+2. **File does not exist** → create an empty `DO.md` at repo root. Ensure `DO.md` is in `.gitignore` (append if missing, don't duplicate). Tell the user:
    > Created `DO.md`. Awaiting instructions (inline or via DO.md).
    Then **stop** — do not proceed to Step 2.
 3. **File exists but is empty** → tell the user:
