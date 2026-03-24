@@ -767,15 +767,15 @@ or `/q` in a separate terminal to start a worker.
 3. **Active roadmap(s) found:**
    - If one → resume: read YAML frontmatter → determine current phase → re-enter flow at correct gate
    - If multiple → `AskUserQuestion` which to resume
-   - If `SCOPE.md` has content → `AskUserQuestion`: resume active initiative or start new one from `SCOPE.md`?
+   - If `SCOPE.md` has content → read contents into `$GOAL`, immediately empty `SCOPE.md`, then `AskUserQuestion`: resume active initiative or start new one?
 3. **No active roadmap:** Check `SCOPE.md` at repo root
-   - Has content → read contents, use as goal, enter Phase 1 (SCOPE)
+   - Has content → read full contents into `$GOAL`, then **immediately** overwrite `SCOPE.md` with an empty file (Write tool, empty string). Proceed with `$GOAL` into Phase 1 (SCOPE).
    - Empty or missing → "No active initiative. Run `/scope {goal}` or write your goal in `SCOPE.md`."
 4. Ensure relay is running
 
 ### SCOPE.md lifecycle
 
-Once `/scope` reads `SCOPE.md` and creates the roadmap (Phase 1 approval + roadmap written), **empty the file** (write empty string). The goal now lives in the roadmap — `SCOPE.md` is free for the next initiative.
+Clear on read: the moment `/scope` reads `SCOPE.md` content, it empties the file immediately (before any council invocation or user interaction). The content is in the conversation context — the file is free for the next initiative. Same pattern as `/do` with `DO.md`.
 
 ---
 
