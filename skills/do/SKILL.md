@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 1.1.0
+  version: 1.2.0
 ---
 
 # Do
@@ -13,6 +13,7 @@ metadata:
 Run a single task in an isolated worktree. Review the diff. Merge or discard.
 
 ```
+/do                       — read instructions from DO.md at repo root
 /do <instructions>        — execute task in worktree, confirm, merge
 /do <instructions> --yolo — skip confirmation, auto-merge on success
 ```
@@ -35,8 +36,21 @@ No queue files. No relay. No drain loop. Just: isolate → execute → confirm �
 
 ### Step 1: VALIDATE
 
-- If no instructions provided → `AskUserQuestion`: "What should I do?"
 - Record the current branch: `git rev-parse --abbrev-ref HEAD` → `$ORIGIN_BRANCH`
+- Determine repo root: `git rev-parse --show-toplevel` → `$REPO_ROOT`
+
+**If no inline instructions provided (bare `/do`):**
+
+1. Check for `$REPO_ROOT/DO.md`.
+2. **File does not exist** → create an empty `DO.md` at repo root. Tell the user:
+   > Created `DO.md`. Awaiting instructions (inline or via DO.md).
+   Then **stop** — do not proceed to Step 2.
+3. **File exists but is empty** → tell the user:
+   > Awaiting instructions (inline or via DO.md).
+   Then **stop**.
+4. **File exists and has content** → read the full contents into `$INSTRUCTIONS`, then **immediately** overwrite `DO.md` with an empty file (Write tool, empty string). Proceed with `$INSTRUCTIONS`.
+
+**If inline instructions provided:** use them directly.
 
 ### Step 2: CREATE WORKTREE
 
