@@ -65,7 +65,7 @@ Format as a concise list with one line per workflow showing the chain:
 1. Read `~/.claude/skills/{skill-name}/SKILL.md`. If not found → output: `Skill '{skill-name}' not found. Run /info to list available skills.`
 2. Extract from frontmatter: `name`, `description`, `version`.
 3. Scan the file for sub-actions and flags:
-   - Lines matching `/{skill-name} {sub-action}` patterns
+   - Lines matching `/{skill-name}:{sub-action}` patterns (colon syntax)
    - `--flag` patterns
    - Fenced code blocks showing CLI usage
 4. Check for `## Memory Integration` section → extract one-line summary if present.
@@ -77,7 +77,7 @@ Format as a concise list with one line per workflow showing the chain:
 {description}
 
 Sub-actions:
-  /skill arg1       — description
+  /skill:action      — description
   (none if empty)
 
 Flags:

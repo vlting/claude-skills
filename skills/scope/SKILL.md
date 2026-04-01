@@ -15,12 +15,12 @@ Interactive, approval-gated planning and orchestration. Every unit of work is re
 ```
 /scope {goal}          — start new initiative
 /scope                 — resume active initiative; if none, read SCOPE.md (non-empty) from repo root
-/scope setup           — scaffold repo for scope + q workflows (run once per repo)
-/scope status          — show hierarchy dashboard
-/scope update          — modify an active roadmap
-/scope watch           — monitor workers, verify tracking, then auto-resume
-/scope clean           — audit + fix all PM tracking (roadmap, issues, PRs, board)
-/scope abort           — abort (preserves all work)
+/scope:setup           — scaffold repo for scope + q workflows (run once per repo)
+/scope:status          — show hierarchy dashboard
+/scope:update          — modify an active roadmap
+/scope:watch           — monitor workers, verify tracking, then auto-resume
+/scope:clean           — audit + fix all PM tracking (roadmap, issues, PRs, board)
+/scope:abort           — abort (preserves all work)
 ```
 
 ---
@@ -460,7 +460,7 @@ setTimeout(() => s.destroy(), 500);
 
 ---
 
-## `/scope status`
+## `/scope:status`
 
 ```
 {Title} ({scope})
@@ -482,7 +482,7 @@ Reads from `.ai-plans/` — scan for all roadmaps, display active ones.
 
 ---
 
-## `/scope watch`
+## `/scope:watch`
 
 Autonomous monitor → verify → resume cycle. Use during EXECUTE phase when workers are processing tasks.
 
@@ -503,13 +503,13 @@ Three sequential phases, fully autonomous (no user interaction until next gate):
 
 **Phase B: Clean**
 
-Once all tasks complete, run `/scope clean` (the full 5-pass audit) **before doing anything else**. Workers often leave tracking gaps — stale board statuses, missing PR checkoffs, roadmap drift. Clean fixes all of it.
+Once all tasks complete, run `/scope:clean` (the full 5-pass audit) **before doing anything else**. Workers often leave tracking gaps — stale board statuses, missing PR checkoffs, roadmap drift. Clean fixes all of it.
 
-This is not a lightweight check. It is the real `/scope clean` — Pass 0 through Pass 4, autonomous, no user interaction.
+This is not a lightweight check. It is the real `/scope:clean` — Pass 0 through Pass 4, autonomous, no user interaction.
 
 **Phase C: Resume Flow**
 
-After clean completes, resume as if `/scope watch` was called fresh:
+After clean completes, resume as if `/scope:watch` was called fresh:
 1. Re-read roadmap frontmatter (clean may have updated it)
 2. If phase is still `execute` and tasks remain → return to **Phase A** (monitor again)
 3. If all tasks complete → transition to **VERIFY** — run build/lint/test, check acceptance criteria
@@ -526,19 +526,19 @@ REMAINING=$(find .ai-queue -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')
 COMPLETED=$(find .ai-queue/_completed -maxdepth 1 -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
 ```
 
-Use the `/loop` skill pattern internally — but `/scope watch` is a single invocation, not recurring. The polling loop runs within the single command execution.
+Use the `/loop` skill pattern internally — but `/scope:watch` is a single invocation, not recurring. The polling loop runs within the single command execution.
 
 ### Rules
 
 - **No user interaction during Phase A/B.** Only Phase C (VERIFY gate) requires approval.
 - **Re-send relay events** if workers appear stalled (no new completions for 2+ minutes).
 - **9-minute ceiling is soft.** If 6/7 tasks done at 9 min, extend 3 min automatically. Only prompt if <50% done at 9 min.
-- **Phase B is mandatory.** Never skip `/scope clean` after workers finish, even if all tasks completed quickly. Workers leave messes.
+- **Phase B is mandatory.** Never skip `/scope:clean` after workers finish, even if all tasks completed quickly. Workers leave messes.
 - **Phase C re-evaluates.** After clean, re-read roadmap state — don't assume tasks are still complete. If clean revealed issues, loop back to Phase A.
 
 ---
 
-## `/scope clean`
+## `/scope:clean`
 
 Full-initiative audit + repair. Derives truth from **shipped code** (merged PRs, branch state), then reconciles roadmap + GH artifacts to match.
 
@@ -607,7 +607,7 @@ For each tracked issue:
 ### Output
 
 ```
-/scope clean — {title}
+/scope:clean — {title}
 ──────────────────────────────────
 Fixed:
   • Roadmap: marked Stage 6.1 done (PR #209 merged)
@@ -634,7 +634,7 @@ Clean:
 
 ---
 
-## `/scope update`
+## `/scope:update`
 
 Interactively modify an active roadmap.
 
@@ -668,7 +668,7 @@ Interactively modify an active roadmap.
 
 ---
 
-## `/scope abort`
+## `/scope:abort`
 
 1. Do NOT delete branches, roadmaps, or completed work.
 2. Set roadmap `status` to `aborted`.
@@ -678,7 +678,7 @@ Interactively modify an active roadmap.
 
 ---
 
-## `/scope setup`
+## `/scope:setup`
 
 One-time repo scaffolding for `/scope` + `/q` workflows. Safe to re-run — idempotent.
 
@@ -736,7 +736,7 @@ Start the relay if not running (standard relay startup sequence). Verify socket 
 **6. Print summary**
 
 ```
-/scope setup — complete
+/scope:setup — complete
 ─────────────────────────────
   ✓ .ai-plans/          created (or exists)
   ✓ .ai-queue/          created (or exists)
