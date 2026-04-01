@@ -49,6 +49,7 @@ Next number = highest existing number + 1 (scan only pending `XXX.md` and active
 <!-- auto-queue -->              ← skip review, start immediately
 <!-- depends-on: 001, 002 -->    ← wait for these tasks to complete first
 <!-- target-branch: feat/x/y --> ← branch to work on (required for worktree)
+<!-- no-merge -->                ← skip self-merge; orchestrator handles merge (used by /scope)
 ```
 
 ---
@@ -352,6 +353,10 @@ When a worker claims a task:
    On **discard**: skip steps 6–8, jump straight to cleanup (step 7) and archive. Do NOT merge.
 
 6. **Merge to target branch:**
+
+   **Check for `<!-- no-merge -->` directive** in the task file. If present, the orchestrator (`/scope`) handles merging — skip steps 6–7 and go to step 6b instead.
+
+   **Standard merge (no `<!-- no-merge -->` directive):**
    ```bash
    cd {repo-root}
    git checkout {target-branch}
@@ -360,6 +365,18 @@ When a worker claims a task:
    git merge --no-ff q-{NNN} -m "merge: q-{NNN} {task-title}"
    git push origin {target-branch}
    ```
+   Then proceed to step 7.
+
+   **6b. Orchestrated mode (`<!-- no-merge -->` present):**
+
+   The worker does NOT merge. Instead:
+   1. Send `task-ready` event via relay (signals the orchestrator that a branch is ready to merge)
+   2. Block on relay waiting for `merge-done:{NNN}` event:
+      ```bash
+      node ~/.claude/skills/q/relay-listen.js "$RELAY_SOCK" ".ai-queue" "300000" "merge-done:{NNN}"
+      ```
+      This blocks up to 5 minutes. If timeout → log warning, proceed to archive anyway (orchestrator may have already merged).
+   3. After receiving `merge-done:{NNN}` (or timeout) → proceed to step 7.
 
 7. **Cleanup:**
    ```bash

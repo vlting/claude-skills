@@ -249,10 +249,12 @@ Stage {N}: {title} — {count} tasks
      ```markdown
      <!-- auto-queue -->
      <!-- target-branch: {prefix}/{slug}/{stage-slug} -->
+     <!-- no-merge -->
      <!-- depends-on: NNN -->
      # Task: {title}
      {Implementation instructions with file paths and acceptance criteria}
      ```
+     **`<!-- no-merge -->` is mandatory.** `/scope` owns all merges — workers must never self-merge.
    - **Integration: move stage ticket to In Progress** on board
    - Send `work-queued` event via relay
    - Update roadmap: stage status → `in-progress`, phase → `execute`
@@ -265,7 +267,7 @@ Stage {N}: {title} — {count} tasks
 
 ## Phase 3: EXECUTE
 
-**The orchestrator does NOT implement.** Workers (`/q`) claim and execute tasks in worktrees.
+**The orchestrator does NOT implement.** Workers (`/q`) claim and execute tasks in worktrees. **The orchestrator owns all merges** — workers never self-merge (enforced by `<!-- no-merge -->` directive).
 
 1. **Verify workers are running.** Check relay for connected workers. If none:
    ```
@@ -274,7 +276,44 @@ Stage {N}: {title} — {count} tasks
    ```
    Do NOT proceed to implement the tasks yourself. Wait.
 
-2. **Monitor via relay events:** `task-completed`, `worker-disconnected`
+2. **Monitor + Merge loop.** Listen for relay events: `task-ready`, `task-completed`, `worker-disconnected`.
+
+   **On `task-ready` event:**
+   A worker has committed and is waiting for merge. The orchestrator merges sequentially:
+
+   a. Scan `.ai-queue/` for active task files (`XXX-active.md`). Read `<!-- worktree: ... -->` and `<!-- branch: ... -->` headers to identify the ready branch.
+
+   b. Merge the worker's branch to the target branch:
+      ```bash
+      TARGET={target-branch from task file}
+      WORKER_BRANCH=q-{NNN}
+
+      cd {repo-root}
+      git checkout $TARGET
+      git fetch origin $TARGET 2>/dev/null || true
+      git rebase origin/$TARGET 2>/dev/null || true
+
+      # Rebase worker branch onto latest target
+      git checkout $WORKER_BRANCH
+      git rebase $TARGET
+      git checkout $TARGET
+
+      # Merge with merge commit
+      git merge --no-ff $WORKER_BRANCH -m "merge: $WORKER_BRANCH {task-title}"
+      git push origin $TARGET
+      ```
+
+   c. Send `merge-done:{NNN}` event via relay (unblocks the worker to clean up):
+      ```bash
+      node -e "
+      const s = require('net').connect(process.argv[1]);
+      s.write(JSON.stringify({type:'event',event:process.argv[2]})+'\n');
+      setTimeout(() => s.destroy(), 500);
+      " "$RELAY_SOCK" "merge-done:{NNN}"
+      ```
+
+   d. On merge conflict: skip this task, log the conflict, continue with other `task-ready` events. Report conflicts at VERIFY.
+
 3. **Print progress:** `[{completed}/{total}] Stage {N}: {title}`
 4. **Completion:** All tasks archived in `_completed/` → proceed to VERIFY.
 
@@ -496,6 +535,7 @@ Three sequential phases, fully autonomous (no user interaction until next gate):
 2. Poll `.ai-queue/` and `.ai-queue/_completed/` every 60 seconds:
    - Count remaining vs completed tasks
    - Print progress: `[{completed}/{total}] Stage {N}: {title} — {elapsed}`
+   - Listen for `task-ready` events and merge worker branches sequentially (same merge protocol as EXECUTE phase — rebase onto target, merge --no-ff, push, send `merge-done:{NNN}`)
    - If workers disconnect (no progress for 2+ cycles), re-send `work-queued` via relay
 3. **Exit conditions:**
    - All tasks moved to `_completed/` → proceed to Phase B

@@ -1,6 +1,6 @@
 ---
 name: think
-description: "Lightweight plan-to-queue pipeline. Explores codebase, runs council deliberation, presents plan for approval, then enqueues and executes via /q."
+description: "Lightweight plan-to-execution pipeline. Explores codebase, runs council deliberation, presents plan for approval, then executes via /run."
 user_invocable: true
 license: MIT
 metadata:
@@ -10,7 +10,7 @@ metadata:
 
 # Think
 
-One command from goal to execution. Plans read-only, approval gates the handoff, then auto-enqueues and drains via `/q`.
+One command from goal to execution. Plans read-only, approval gates the handoff, then executes via `/run`.
 
 ```
 /think {goal}
@@ -32,9 +32,7 @@ No flags. No modes. One input, one approval gate.
     PRESENT  — Review card + plan summary
     |          User: approve / reject / refine (loop on refine)
     |
-    ENQUEUE  — /q segments plan into file-disjoint tasks
-    |
-    EXECUTE  — /q (bare) to drain queue as a worker
+    EXECUTE  — /run spawns parallel agents, serializes merges
 ```
 
 ---
@@ -117,7 +115,7 @@ Display the plan as a review card:
 {Top 3-5 risks}
 
 ---
-**approve** — enqueue and start executing
+**approve** — start executing via /run
 **reject** — abort, return to conversation
 **refine: {feedback}** — re-run PLAN with feedback incorporated
 ```
@@ -127,7 +125,7 @@ Display the plan as a review card:
 Review the plan above. Reply: approve, reject, or refine: {your feedback}
 ```
 
-**If you are about to invoke `/q` or write any files and have NOT yet called `AskUserQuestion` in this conversation — STOP. You skipped PRESENT. Go back and call it now.**
+**If you are about to invoke `/run` or write any files and have NOT yet called `AskUserQuestion` in this conversation — STOP. You skipped PRESENT. Go back and call it now.**
 
 ### Refinement Loop
 
@@ -142,43 +140,27 @@ On `reject`: print "Aborted." and return to normal conversation.
 
 ---
 
-## Phase 4: ENQUEUE
+## Phase 4: EXECUTE
 
 **PREREQUISITE:** User MUST have responded "approve" to an `AskUserQuestion` call. Informal approval via normal message does NOT count. If you have not called `AskUserQuestion` and received a response through it, STOP — go back to Phase 3.
 
 On `approve`:
 
-Invoke `/q` in enqueue mode to segment the plan:
+Invoke `/run` with the full plan text:
 
 ```
-Skill: q
+Skill: run
 Args: Implement the following plan:\n\n{full_plan_text}\n\nGoal: {goal}
 ```
 
-This triggers `/q`'s segment mode:
-- Researches codebase for file-disjoint splitting
-- Creates numbered `.ai-queue/` instruction files with `<!-- auto-queue -->` headers
-- Prints the task walkthrough
+`/run` handles everything:
+- Splits plan into file-disjoint tasks
+- Spawns parallel agents in worktrees
+- Serializes merges (rebase before each merge — no race conditions)
+- Cleans up worktrees
+- Reports results
 
-**Do NOT pass `--no-auto`.** Let `/q` enqueue and start draining in one invocation. This eliminates the risk of forgetting Phase 5.
-
-```
-Skill: q
-Args: Implement the following plan:\n\n{full_plan_text}\n\nGoal: {goal}
-```
-
----
-
-## Phase 5: EXECUTE
-
-Immediately after enqueue completes, invoke `/q` with `--preview` to enter worker mode:
-
-```
-Skill: q
-Args: --preview
-```
-
-This starts the drain loop with preview gates. Before merging each task, the worker spins up a playground dev server in the worktree so the user can visually review changes before approving. Other workers can pick up remaining tasks in parallel from other terminals.
+No queue files. No relay. No drain loop. `/run` is ephemeral and self-contained.
 
 ---
 
@@ -198,20 +180,19 @@ Read `~/.claude/skills/memory/MEMORY_OPS.md` for tool call templates.
 
 ## Rules
 
-1. **No plan mode.** Never call `EnterPlanMode`. The skill is read-only by convention during EXPLORE/PLAN/PRESENT. Code changes only happen in EXECUTE (via `/q` worker).
+1. **No plan mode.** Never call `EnterPlanMode`. The skill is read-only by convention during EXPLORE/PLAN/PRESENT. Code changes only happen in EXECUTE (via `/run`).
 2. **Always council.** Every task gets `/council --subroutine`. No complexity branching, no "too simple to council" shortcut.
-3. **Single approval gate.** One `approve` from user triggers enqueue + execute. No intermediate confirmations.
-4. **Lightweight.** No roadmap files, no saga/epic hierarchy, no GitHub integration. That's `/scope`'s job.
-5. **Self-sufficient.** After enqueue, this agent becomes a worker. It can drain all tasks alone. Additional `/q` workers are optional parallelism.
-6. **No edits before approval.** EXPLORE and PLAN phases are strictly read-only. The first write to disk is `.ai-queue/` files in ENQUEUE.
+3. **Single approval gate.** One `approve` from user triggers execute. No intermediate confirmations.
+4. **Lightweight.** No roadmap files, no saga/epic hierarchy, no GitHub integration, no queue files. That's `/scope`'s job.
+5. **No edits before approval.** EXPLORE and PLAN phases are strictly read-only. Code changes only happen via `/run` agents in EXECUTE.
 
 ---
 
 ## Role Boundary
 
-- `/think` = orchestrate plan -> approve -> enqueue -> become worker
+- `/think` = plan → approve → hand off to `/run`
 - `/council` = deliberation engine (called as `--subroutine`)
-- `/q` = task segmentation (enqueue) + execution (worker mode)
+- `/run` = ephemeral parallel execution with serialized merges
 - `/scope` = full saga/epic lifecycle (not involved here)
 
-`/think` is NOT an orchestrator in the `/scope` sense. It doesn't manage epics, stages, or GitHub tracking. It's a convenience pipeline: plan once, approve once, execute.
+`/think` is NOT an orchestrator in the `/scope` sense. It doesn't manage epics, stages, or GitHub tracking. It's a convenience pipeline: plan once, approve once, execute via `/run`.

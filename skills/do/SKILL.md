@@ -158,8 +158,17 @@ After merge or discard, kill the preview server: `kill $PREVIEW_PID 2>/dev/null`
 # Ensure we're on the origin branch
 git checkout $ORIGIN_BRANCH
 
+# Rebase onto latest to avoid clobbering concurrent work
+git fetch origin $ORIGIN_BRANCH 2>/dev/null || true
+git rebase origin/$ORIGIN_BRANCH 2>/dev/null || true
+
+# Rebase the worktree branch onto latest target
+git checkout $WORKTREE_BRANCH
+git rebase $ORIGIN_BRANCH
+git checkout $ORIGIN_BRANCH
+
 # Merge the worktree branch
-git merge $WORKTREE_BRANCH --no-edit
+git merge --no-ff $WORKTREE_BRANCH -m "merge: $WORKTREE_BRANCH"
 
 # Clean up worktree
 git worktree remove $WORKTREE_PATH --force
