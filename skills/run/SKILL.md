@@ -148,6 +148,7 @@ The orchestrator selects reviewers **conservatively** per task: include by defau
 | `design-critic` | No UI/visual changes (e.g. pure logic, config, build scripts) |
 | `a11y-reviewer` | No interactive/visible UI changes |
 | `stl-enforcer` | No files importing STL or using `styled()`/`stl` prop |
+| `spec-reviewer` | No component implementation (e.g. config, refactor, style-only) |
 | `test-writer` | Tests already included by worker, or task is test-only |
 | `bundle-checker` | No new dependencies and no new exports |
 

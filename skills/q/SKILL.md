@@ -308,7 +308,22 @@ When a worker claims a task:
 
 4. **Commit:** Conventional commit message. Stage only the files specified in the task.
 
-5. **Preview Gate (only when `--preview`):**
+5. **Review Gate:**
+
+   Run specialist review agents against the worktree. Same conservative selection as `/run` Phase 4 — include reviewers by default, skip only when clearly irrelevant to the changed files.
+
+   Spawn selected review agents **in parallel** (all read-only):
+   ```
+   Agent(
+     name: "{reviewer}-q-{NNN}",
+     prompt: "Review the changes in .worktrees/q-{NNN}. Focus on files: {changed files list}.",
+     // model + effort inherited from agent definition
+   )
+   ```
+
+   If any reviewer returns `needs-work`: re-implement fixes in the worktree, re-commit, then re-review (max 1 retry). After retry, proceed regardless — surface unresolved issues in the archive summary.
+
+6. **Preview Gate (only when `--preview`):**
 
    If the `--preview` flag is active, pause before merging:
 
@@ -350,9 +365,9 @@ When a worker claims a task:
    kill $PREVIEW_PID 2>/dev/null
    ```
 
-   On **discard**: skip steps 6–8, jump straight to cleanup (step 7) and archive. Do NOT merge.
+   On **discard**: skip steps 7–9, jump straight to cleanup (step 8) and archive. Do NOT merge.
 
-6. **Merge to target branch:**
+7. **Merge to target branch:**
 
    **Check for `<!-- no-merge -->` directive** in the task file. If present, the orchestrator (`/scope`) handles merging — skip steps 6–7 and go to step 6b instead.
 
@@ -365,9 +380,9 @@ When a worker claims a task:
    git merge --no-ff q-{NNN} -m "merge: q-{NNN} {task-title}"
    git push origin {target-branch}
    ```
-   Then proceed to step 7.
+   Then proceed to step 8.
 
-   **6b. Orchestrated mode (`<!-- no-merge -->` present):**
+   **7b. Orchestrated mode (`<!-- no-merge -->` present):**
 
    The worker does NOT merge. Instead:
    1. Send `task-ready` event via relay (signals the orchestrator that a branch is ready to merge)
@@ -376,15 +391,15 @@ When a worker claims a task:
       node ~/.claude/skills/q/relay-listen.js "$RELAY_SOCK" ".ai-queue" "300000" "merge-done:{NNN}"
       ```
       This blocks up to 5 minutes. If timeout → log warning, proceed to archive anyway (orchestrator may have already merged).
-   3. After receiving `merge-done:{NNN}` (or timeout) → proceed to step 7.
+   3. After receiving `merge-done:{NNN}` (or timeout) → proceed to step 8.
 
-7. **Cleanup:**
+8. **Cleanup:**
    ```bash
    git worktree remove .worktrees/q-{NNN} --force
    git branch -D q-{NNN}
    ```
 
-8. **Archive:** Rename to `_completed/{commit-hash}.md`. Send `task-completed` event with key `{NNN}:{ctime}`.
+9. **Archive:** Rename to `_completed/{commit-hash}.md`. Send `task-completed` event with key `{NNN}:{ctime}`.
 
 ---
 
