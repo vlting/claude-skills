@@ -44,6 +44,8 @@ Flags:
     │
     MONITOR  — wait for agents to complete
     │
+    REVIEW   — specialist agents review each worktree (read-only)
+    │
     MERGE    — sequential rebase + merge for each completed branch
     │
     CLEANUP  — remove worktrees, report results
@@ -133,7 +135,54 @@ Track status per task:
 
 ---
 
-## Phase 4: MERGE
+## Phase 4: REVIEW
+
+After all workers complete, run specialist review agents against each completed worktree. Reviews are **read-only** — they produce verdicts, not edits.
+
+### Reviewer selection
+
+The orchestrator selects reviewers **conservatively** per task: include by default, skip only when clearly irrelevant. Use the task description and changed files to decide.
+
+| Agent | Skip when |
+|-------|-----------|
+| `design-critic` | No UI/visual changes (e.g. pure logic, config, build scripts) |
+| `a11y-reviewer` | No interactive/visible UI changes |
+| `stl-enforcer` | No files importing STL or using `styled()`/`stl` prop |
+| `test-writer` | Tests already included by worker, or task is test-only |
+| `bundle-checker` | No new dependencies and no new exports |
+
+**When in doubt, include the reviewer.** False positives (reviewer says "pass") are cheap. Missed issues are expensive.
+
+### Execution
+
+For each completed worktree, spawn selected review agents **in parallel** (they're read-only, no conflicts):
+
+```
+Agent(
+  name: "{reviewer}-run-{NNN}",
+  prompt: "Review the changes in {worktree path}. Focus on files: {changed files list}.",
+  // model + effort inherited from agent definition
+)
+```
+
+### Verdicts
+
+Collect verdicts from all reviewers per task:
+
+- **All pass** → proceed to MERGE
+- **Any needs-work** → log issues. Optionally re-spawn worker with critique:
+  ```
+  Agent(
+    prompt: "Fix these review issues in {worktree path}:\n\n{collected issues}\n\nCommit fixes.",
+    mode: "bypassPermissions"
+  )
+  ```
+  Then re-review (max 1 retry to avoid infinite loops).
+- **Still failing after retry** → proceed to MERGE anyway, but flag issues in the results summary for user attention.
+
+---
+
+## Phase 5: MERGE
 
 **Sequential, in task-number order.** This is the core serialization guarantee.
 
@@ -169,7 +218,7 @@ git merge --no-ff run-{NNN} -m "merge: run-{NNN} {task-title}"
 
 ---
 
-## Phase 5: CLEANUP
+## Phase 6: CLEANUP
 
 For each task (merged, skipped, or failed):
 
@@ -185,12 +234,15 @@ Print results:
 ```
 /run complete
 ─────────────────────────
-  ✓ run-001: {title} — merged
-  ✓ run-002: {title} — merged
-  ✗ run-003: {title} — conflict (skipped)
+  ✓ run-001: {title} — merged (reviews: all pass)
+  ✓ run-002: {title} — merged (reviews: pass after retry)
+  ⚠ run-003: {title} — merged (reviews: 1 unresolved issue)
+  ✗ run-004: {title} — conflict (skipped)
 
 Target: {$TARGET_BRANCH}
 ```
+
+If any tasks have unresolved review issues, print them after the summary so the user can address them manually.
 
 ---
 

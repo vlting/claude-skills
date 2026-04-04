@@ -105,9 +105,24 @@ Rules:
 - Use STL shorthands (bg, p, px, radius, etc).
 ```
 
+### Step 3b: REVIEW
+
+After the worker agent returns, run specialist review agents against the worktree. Same selection logic as `/run` Phase 4: include reviewers by default, skip only when clearly irrelevant to the changed files.
+
+Spawn selected review agents **in parallel** (all read-only):
+```
+Agent(
+  name: "{reviewer}-do",
+  prompt: "Review the changes in {WORKTREE_PATH}. Focus on files: {changed files list}.",
+  // model + effort inherited from agent definition
+)
+```
+
+If any reviewer returns `needs-work`: re-spawn the worker with the collected critique, then re-review (max 1 retry). After retry, proceed to CONFIRM regardless — surface unresolved issues in the summary for the user to see.
+
 ### Step 4: CONFIRM
 
-When the agent returns:
+When reviews complete:
 
 1. Show the user a summary:
 
