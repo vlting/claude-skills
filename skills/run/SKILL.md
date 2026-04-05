@@ -149,6 +149,7 @@ The orchestrator selects reviewers **conservatively** per task: include by defau
 | `a11y-reviewer` | No interactive/visible UI changes |
 | `stl-enforcer` | No files importing STL or using `styled()`/`stl` prop |
 | `spec-reviewer` | No component implementation (e.g. config, refactor, style-only) |
+| `ui-tester` | No UI changes, or no `.claude/test-context.md` in repo |
 | `test-writer` | Tests already included by worker, or task is test-only |
 | `bundle-checker` | No new dependencies and no new exports |
 
