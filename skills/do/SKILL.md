@@ -154,10 +154,7 @@ When reviews complete:
    ```
    Add to the summary: `**Preview:** {URL}`
 
-   Open the playground in the user's default browser:
-   ```bash
-   open "$URL"
-   ```
+   Do NOT open the URL automatically. Just display it — the user will open it if they want.
 
 3. **If `--yolo`:** kill the preview server (`kill $PREVIEW_PID 2>/dev/null`), skip to Step 5 (merge).
 4. **Otherwise:** `AskUserQuestion`:
