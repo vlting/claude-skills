@@ -351,10 +351,7 @@ When a worker claims a task:
    **Worktree:** `.worktrees/q-{NNN}`
    ```
 
-   Open the playground in the user's default browser:
-   ```bash
-   open "$URL"
-   ```
+   Do NOT open the URL automatically. Just display it — the user will open it if they want.
 
    Then `AskUserQuestion`:
    - **merge** — proceed to merge and clean up
