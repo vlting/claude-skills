@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 1.0.0
+  version: 2.0.0
 ---
 
 # Refine
@@ -13,8 +13,7 @@ metadata:
 Iterative, approval-gated refinement loop for any module, component, or group thereof. Researches best practices, councils a spec, collects known issues, implements in a worktree, reviews with the user — then moves to the next target.
 
 ```
-/refine <glob|file|list>           — refine targets one by one
-/refine <glob|file|list> --skip N  — skip first N targets (resume)
+/refine <glob|file|list>           — refine targets one by one (auto-resumes interrupted sessions)
 ```
 
 ---
@@ -61,16 +60,56 @@ Accepts any of:
 
 ---
 
-## State Tracking
+## State Tracking (session-persisted)
 
-Track across the loop:
+State is persisted via the `state` MCP server. Sessions survive conversation disconnects.
 
+### State shape (JSON payload)
+
+```json
+{
+  "targets": ["Button", "Menu", "Dialog"],
+  "currentIndex": 0,
+  "currentPhase": "RESEARCH",
+  "completedTargets": [],
+  "researchBrief": null,
+  "specContent": null,
+  "issueList": null
+}
 ```
-currentIndex: number     — which target (0-based)
-currentPhase: string     — RESEARCH | SPEC | ISSUES | IMPLEMENT | SHIP
-totalTargets: number     — total count
-completedTargets: string[] — names of finished targets
-```
+
+### Session lifecycle
+
+**On startup (before target resolution):**
+
+1. Call `mcp__state__session_resume(skill: "refine", repo: {cwd})`.
+2. If result is **not null** → interrupted session found:
+   - Parse last checkpoint's `state_json` to recover state
+   - If last checkpoint has `git_ref`, verify it: `git cat-file -t {git_ref}` (exists = phase completed)
+   - Show: `"Found interrupted /refine session ({currentIndex+1}/{total}, phase: {phase}). Resume or discard?"`
+   - `AskUserQuestion` with options: **resume** / **discard**
+   - On discard → `mcp__state__session_abandon(session_id)`, then proceed fresh
+   - On resume → skip to the recovered phase/target
+3. If result is **null** → fresh start. After target resolution + user confirmation:
+   - `mcp__state__session_start(skill: "refine", repo: {cwd}, payload: {initial state JSON})`
+
+**At each phase transition:**
+
+Call `mcp__state__session_checkpoint` with:
+- `session_id`: the active session ID
+- `phase`: current phase name (e.g., "RESEARCH", "SPEC", "ISSUES", "IMPLEMENT", "SHIP")
+- `state_json`: full state snapshot (JSON stringified)
+- `git_ref`: commit SHA if a commit was made (SHIP phase), omit otherwise
+
+**On completion:**
+
+Call `mcp__state__session_complete(session_id)` after all targets are done.
+
+**On abort:**
+
+Call `mcp__state__session_abandon(session_id)` when user chooses `abort`.
+
+### Phase header
 
 At the start of each phase, print:
 
@@ -83,6 +122,8 @@ At the start of each phase, print:
 ## Phase 1: RESEARCH
 
 **Goal:** Gather conventions, standards, and best practices for this type of component/module.
+
+**Checkpoint:** At the start of this phase, call `mcp__state__session_checkpoint` with `phase: "RESEARCH"` and the current state snapshot.
 
 1. Identify what kind of component/module the target is (e.g., Dialog, Menu, Tabs, Form).
 
@@ -151,6 +192,8 @@ On `add:` → append notes to the research brief, confirm, then proceed.
 
 ## Phase 2: SPEC
 
+**Checkpoint:** Call `mcp__state__session_checkpoint` with `phase: "SPEC"` and state including `researchBrief`.
+
 **Goal:** Draft or update the target's spec via council deliberation, iterated with the user.
 
 1. Invoke `/council` as a subroutine:
@@ -211,6 +254,8 @@ On `skip`: proceed with the existing spec (or no spec if none exists).
 
 ## Phase 3: ISSUES
 
+**Checkpoint:** Call `mcp__state__session_checkpoint` with `phase: "ISSUES"` and state including `specContent`.
+
 **Goal:** Collect the user's known issues with the current implementation.
 
 1. `AskUserQuestion`:
@@ -233,6 +278,8 @@ On `skip`: proceed with spec + research only.
 ---
 
 ## Phase 4: IMPLEMENT
+
+**Checkpoint:** Call `mcp__state__session_checkpoint` with `phase: "IMPLEMENT"` and state including `issueList`.
 
 **Goal:** Apply all gathered context (research + spec + issues) in an isolated worktree.
 
@@ -285,16 +332,20 @@ After `/do` merges successfully:
 git push
 ```
 
-2. Confirm:
+2. Get the commit SHA: `git rev-parse HEAD`
+
+3. **Checkpoint with git_ref:** Call `mcp__state__session_checkpoint` with `phase: "SHIP"`, updated state (target added to `completedTargets`, `currentIndex` advanced), and `git_ref: {commit SHA}`.
+
+4. Confirm:
 ```
 {targetName} complete. [{currentIndex + 1}/{totalTargets}] done.
 ```
 
-3. Add to `completedTargets`.
+5. If more targets remain → advance `currentIndex`, reset `currentPhase` to RESEARCH, continue loop.
 
-4. If more targets remain → advance `currentIndex`, reset `currentPhase` to RESEARCH, continue loop.
-
-5. If all targets done:
+6. If all targets done:
+   - Call `mcp__state__session_complete(session_id)`.
+   - Print:
 ```
 All {totalTargets} targets refined:
 {bulleted list of completedTargets}
@@ -310,7 +361,7 @@ At any `AskUserQuestion`, the user can jump phases:
 |---------|--------|
 | `skip` | Skip current phase, proceed to next |
 | `skip-to: {phase}` | Jump to named phase |
-| `abort` | Stop the entire session |
+| `abort` | Stop the entire session → `session_abandon` |
 | `next` | Skip remaining phases for this target, move to next target |
 
 These allow fast-tracking simple targets while keeping the full loop for complex ones.
@@ -338,7 +389,7 @@ Read `~/.claude/skills/memory/MEMORY_OPS.md` for tool call templates.
 4. **Council for specs.** Always use `/council --subroutine` for spec drafts. No shortcutting.
 5. **Implementation via `/do`.** Always in a worktree. Never edit the main tree directly.
 6. **Composable.** This skill calls `/council` and `/do` — it does not reimplement them.
-7. **Resumable.** `--skip N` lets the user resume a session that was interrupted.
+7. **Resumable.** Sessions are persisted via `state` MCP. `session_resume` at startup auto-detects interrupted work.
 8. **No edits before IMPLEMENT.** Phases 1-3 are strictly read-only + research. First write happens inside `/do`.
 9. **Push after merge.** SHIP always pushes so progress is saved before moving on.
 
@@ -358,7 +409,7 @@ Resolves to 4 target directories. For each one:
 - Pushes, moves to next
 
 ```
-/refine "src/components/**" --skip 3
+/refine "src/components/**"
 ```
 
-Expands glob, skips the first 3 (already done), continues from target #4.
+Expands glob. If a previous session was interrupted, auto-detects and offers to resume from where it left off.
