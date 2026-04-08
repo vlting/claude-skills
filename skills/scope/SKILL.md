@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 2.5.0
+  version: 3.0.0
 ---
 
 # Scope
@@ -63,6 +63,29 @@ Always full deliberation (4-7 personas). `--subroutine` returns the plan directl
 ---
 
 ## State
+
+### Session persistence (state MCP)
+
+In addition to the roadmap file, /scope registers with the `state` MCP server for cross-conversation session tracking.
+
+**Scope key:** `skill: "scope"`, `repo: {cwd}`, `scope: {slug}` (the initiative slug — allows parallel initiatives).
+
+**On startup (before roadmap scan):**
+1. Call `mcp__state__session_resume(skill: "scope", repo: {cwd})` — checks for ANY active scope session.
+2. If found → use the session's `scope` field (the initiative slug) to go straight to the right roadmap. Skip the `.ai-plans/` scan + user disambiguation.
+3. If not found → fall through to normal roadmap scan / SCOPE.md detection.
+
+**On SCOPE approval:** `mcp__state__session_start(skill: "scope", repo: {cwd}, scope: {slug})`
+
+**At each phase transition** (BREAKDOWN, EXECUTE, VERIFY, ADVANCE, SHIP): `mcp__state__session_checkpoint(session_id, phase: {phase}, state_json: {slug, current_epic, current_stage}, git_ref: {HEAD SHA if commit was made})`
+
+**On SHIP (all epics done):** `mcp__state__session_complete(session_id)`
+
+**On abort:** `mcp__state__session_abandon(session_id)`
+
+The roadmap file remains the source of truth for initiative structure. The session DB is a fast-path index for "what's active?" and "where was I?"
+
+### Roadmap file
 
 Single roadmap file per initiative: `.ai-plans/{slug}/roadmap.md`
 
@@ -712,9 +735,10 @@ Interactively modify an active roadmap.
 
 1. Do NOT delete branches, roadmaps, or completed work.
 2. Set roadmap `status` to `aborted`.
-3. If integration: close ticket with "Aborted. Work preserved."
-4. Send `epic-done` via relay (workers exit).
-5. Print where to find preserved work.
+3. `mcp__state__session_abandon(session_id)` — mark session abandoned.
+4. If integration: close ticket with "Aborted. Work preserved."
+5. Send `epic-done` via relay (workers exit).
+6. Print where to find preserved work.
 
 ---
 
