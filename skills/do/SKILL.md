@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 1.2.0
+  version: 2.0.0
 ---
 
 # Do
@@ -19,6 +19,20 @@ Run a single task in an isolated worktree. Review the diff. Merge or discard.
 ```
 
 No queue files. No relay. No drain loop. Just: isolate → execute → confirm → merge.
+
+### Session persistence (state MCP)
+
+`/do` registers with the `state` MCP for dashboard visibility and worktree recovery.
+
+**Scope key:** task slug derived from the first ~30 chars of instructions (slugified).
+
+**Lifecycle:**
+1. **Step 1 (VALIDATE):** `mcp__state__session_start(skill: "do", repo: {cwd}, scope: {task-slug}, payload: {instructions summary, origin_branch})`.
+2. **Step 3 (EXECUTE):** `mcp__state__session_checkpoint(session_id, phase: "execute", state_json: {worktree_path, worktree_branch})`.
+3. **Step 5 (MERGE):** `mcp__state__session_checkpoint(session_id, phase: "merge", git_ref: {commit SHA})`, then `mcp__state__session_complete(session_id)`.
+4. **Step 5 alt (DISCARD):** `mcp__state__session_complete(session_id)`.
+
+**Recovery:** If a new conversation calls `/do` and `session_resume` finds an active session with `phase: "execute"`, check if the worktree still exists. If so, offer to resume (show diff) or discard. If worktree is gone, abandon the stale session and start fresh.
 
 ---
 

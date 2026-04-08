@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 1.0.0
+  version: 2.0.0
 ---
 
 # Run
@@ -293,7 +293,7 @@ git branch -D run-{NNN}
 2. **Always rebase before merge.** Every branch gets rebased onto latest target before merging.
 3. **Sequential merge order.** 001 before 002 before 003. Never parallel merges.
 4. **One agent per task.** No drain loops, no relay, no queue files.
-5. **Ephemeral.** No persistent state. If interrupted, worktrees may remain — user cleans up manually or `/run` detects them on next invocation.
+5. **Session-tracked.** Registered with `state` MCP for `/state` dashboard visibility. `session_start(skill: "run", repo: {cwd})` at ANALYZE, `session_checkpoint` at SPAWN/MERGE, `session_complete` at CLEANUP. If interrupted, worktrees may remain — `/state` shows the stale session; user cleans up or `/run` detects them on next invocation.
 6. **Never use `Agent(isolation: "worktree")`** — it branches from `origin/main`, not the target branch. Always create worktrees manually.
 7. **File-disjoint tasks.** Each task must touch different files for safe parallel execution.
 8. **Target = current branch.** `/run` merges to whatever branch is checked out when invoked.
