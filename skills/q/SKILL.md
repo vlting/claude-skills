@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 15.2.0
+  version: 16.0.0
 ---
 
 # Q
@@ -74,6 +74,29 @@ Active task files track progress inline:
 
 **LAT (Last Active Timestamp):** Updated every significant action. Used for orphan detection.
 **PID:** The agent process claiming this task. Verified via `kill -0`.
+
+---
+
+## Session Persistence (state MCP)
+
+Workers register with the `state` MCP server for cross-conversation tracking and `/state` dashboard visibility.
+
+**Session key:** `skill: "q"`, `repo: {cwd}`, `scope: "worker"` (drain mode) or `scope: "enqueue"` (enqueue mode).
+
+**Drain mode lifecycle:**
+
+1. **On startup:** `mcp__state__session_start(skill: "q", repo: {cwd}, scope: "worker")`.
+   - Idempotent — if the same worker reconnects, returns the existing session.
+2. **On task claim:** `mcp__state__session_checkpoint(session_id, phase: "claim", state_json: {task: "NNN", target_branch, title})`.
+3. **On task complete/archive:** `mcp__state__session_checkpoint(session_id, phase: "complete", state_json: {task: "NNN"}, git_ref: {commit SHA})`.
+4. **On idle (queue empty, blocking on relay):** `mcp__state__session_checkpoint(session_id, phase: "idle")`.
+5. **On exit (Esc or no more work):** `mcp__state__session_complete(session_id)`.
+
+**Enqueue mode:** `session_start` on entry, `session_complete` after files are written. Lightweight — just for dashboard visibility.
+
+**Recovery:** If a worker reconnects after a crash, `session_resume` shows the last checkpoint. If it was mid-task (`phase: "claim"`), the worker checks if the task file is still `XXX-active.md` with its PID — if so, the worktree may still exist and work can resume. If not (orphan recovery already happened), start fresh.
+
+The `.ai-queue/` files and relay remain authoritative for task content and claim coordination. The session DB is for observability and recovery hints.
 
 ---
 
