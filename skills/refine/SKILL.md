@@ -14,7 +14,7 @@ Iterative, approval-gated refinement loop for any module, component, or group th
 
 ```
 /refine <glob|file|list>           — refine targets one by one (auto-resumes interrupted sessions)
-/refine:auto <targets> [context]   — fully autonomous: no approval gates, status tracked in .md file
+/refine <targets> --auto [context]  — fully autonomous: no approval gates, status tracked in .md file
 ```
 
 ---
@@ -43,7 +43,7 @@ Iterative, approval-gated refinement loop for any module, component, or group th
 
 ---
 
-## `/refine:auto` — Autonomous Mode
+## `--auto` — Autonomous Mode
 
 Fully autonomous refinement. No `AskUserQuestion` gates. All decisions, status, issues, and questions are written to a status file instead of waiting for user input.
 
@@ -56,7 +56,7 @@ Fully autonomous refinement. No `AskUserQuestion` gates. All decisions, status, 
 ### Invocation
 
 ```
-/refine:auto <targets> [additional context or instructions]
+/refine <targets> --auto [additional context or instructions]
 ```
 
 The second argument (optional) is free-form context: constraints, source of truth pointers, known issues, etc. This replaces the ISSUES phase — the user front-loads what they know.
@@ -68,7 +68,7 @@ All output that would normally go to the user goes to `REFINE_STATUS.md` in the 
 **Create at startup. Update after every phase. Structure:**
 
 ```markdown
-# /refine:auto — Status
+# /refine --auto — Status
 
 **Branch:** `{worktree branch}`
 **Started:** {ISO date}
@@ -117,7 +117,7 @@ All output that would normally go to the user goes to `REFINE_STATUS.md` in the 
 ### Auto Mode Flow
 
 ```
-/refine:auto <targets> [context]
+/refine <targets> --auto [context]
     |
     INIT         — resolve targets, create worktree, create REFINE_STATUS.md
     |
@@ -150,7 +150,7 @@ All output that would normally go to the user goes to `REFINE_STATUS.md` in the 
 2. Create worktree manually (same as `/do` Step 2): `git worktree add -b "refine/auto-{timestamp}" ".worktrees/refine-auto-{timestamp}"`
 3. Symlink `node_modules`.
 4. Create `REFINE_STATUS.md` at **repo root** with initial structure.
-5. Start state session: `mcp__state__session_start(skill: "refine:auto", repo: {cwd}, scope: "auto", payload: {initial state})`.
+5. Start state session: `mcp__state__session_start(skill: "refine", repo: {cwd}, scope: "auto", payload: {initial state})`.
 
 #### RESEARCH (auto)
 
@@ -218,7 +218,7 @@ If the target is a UI component and visual tooling is available:
 After all targets:
 1. Update `REFINE_STATUS.md` with final summary
 2. Complete state session
-3. Print one-line notification: `"/refine:auto complete — {N} targets. Review REFINE_STATUS.md"`
+3. Print one-line notification: `"/refine --auto complete — {N} targets. Review REFINE_STATUS.md"`
 
 ### Parallelization in Auto Mode
 
@@ -244,7 +244,7 @@ Unlike standard `/refine` (strictly serial), auto mode **MAY parallelize** targe
 ### Example
 
 ```
-/refine:auto "ButtonGroup, Badge, Card, Dialog, Sheet, Toast" on NATIVE only: Card should default to raised. Checkbox small icon gets cutoff. Use web playground as source of truth for visual comparison.
+/refine "ButtonGroup, Badge, Card, Dialog, Sheet, Toast" --auto on NATIVE only: Card should default to raised. Checkbox small icon gets cutoff. Use web playground as source of truth for visual comparison.
 ```
 
 → Resolves 6 targets. Creates worktree. For each: researches, councils a spec, implements, verifies visually, commits. Status tracked in `REFINE_STATUS.md`. User reviews the file and the branch when ready.
