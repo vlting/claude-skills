@@ -13,10 +13,10 @@ metadata:
 Delivery lifecycle tracking, few-shot pattern capture, and business intelligence for EaaS operations.
 
 ```
-/ops:few-shot   — Guided few-shot capture (requirement → correction → lesson)
-/ops:close      — Log a completed delivery to SQLite
-/ops:insights   — Query patterns from past deliveries
-/ops:status     — Quick stats (revenue, hours, margins)
+/ops few-shot   — Guided few-shot capture (requirement → correction → lesson)
+/ops close      — Log a completed delivery to SQLite
+/ops insights   — Query patterns from past deliveries
+/ops status     — Quick stats (revenue, hours, margins)
 ```
 
 ---
@@ -32,7 +32,7 @@ Delivery lifecycle tracking, few-shot pattern capture, and business intelligence
 
 ---
 
-## `/ops:few-shot`
+## `/ops few-shot`
 
 Step-by-step guided capture using `AskUserQuestion`. One question at a time, never batch.
 
@@ -94,7 +94,7 @@ Call `mcp__memory__memory_store` with:
 
 ---
 
-## `/ops:close`
+## `/ops close`
 
 Log a completed delivery. Step-by-step using `AskUserQuestion`. One question at a time.
 
@@ -133,7 +133,7 @@ Preset: string
 
 **Step 8:** "Bugs found? Specs updated?" — free text or "none"
 
-**Step 9:** "Capture few-shots?" — yes chains to `/ops:few-shot`, no continues
+**Step 9:** "Capture few-shots?" — yes chains to `/ops few-shot`, no continues
 
 **Step 10:** "Notes?" — free text or "none"
 
@@ -215,7 +215,7 @@ Export updated: deliveries.json
 
 ---
 
-## `/ops:insights`
+## `/ops insights`
 
 Query the SQLite DB and present formatted results. No user interaction needed — just run and display.
 
@@ -267,7 +267,7 @@ Present each section as a markdown table with a header. Keep it scannable.
 
 ---
 
-## `/ops:status`
+## `/ops status`
 
 Quick stats. No interaction — query and display.
 

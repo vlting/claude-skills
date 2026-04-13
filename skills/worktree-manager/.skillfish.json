@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "worktree-manager",
+  "owner": "jamesyorke",
+  "repo": "worktree-agent-skill",
+  "path": "worktree-manager",
+  "branch": "main",
+  "sha": "c1897fbde1f4638cce73fc073f83f718ef2b79f3",
+  "source": "manual"
+}

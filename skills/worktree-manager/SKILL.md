@@ -19,9 +19,9 @@ Fast, interactive management of git worktrees with consistent conventions and au
 
 If the user provided a sub-command (`:create`, `:list`, or `:remove`), use that action.
 If no sub-command was provided, ask the user which action they want:
-- **:create** — Create a new worktree with a new branch (`/worktree-manager:create`)
-- **:list** — List all current worktrees (`/worktree-manager:list`)
-- **:remove** — Remove an existing worktree (`/worktree-manager:remove`)
+- **:create** — Create a new worktree with a new branch (`/worktree-manager create`)
+- **:list** — List all current worktrees (`/worktree-manager list`)
+- **:remove** — Remove an existing worktree (`/worktree-manager remove`)
 
 Then read the appropriate reference:
 

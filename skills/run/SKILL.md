@@ -14,7 +14,7 @@ Parallel execution with serialized merges. Spawns agents in isolated worktrees, 
 
 ```
 /run {instructions}   — analyze, split, spawn, merge
-/run:status           — show active agents and progress
+/run status           — show active agents and progress
 ```
 
 Flags:
@@ -248,7 +248,7 @@ If any tasks have unresolved review issues, print them after the summary so the 
 
 ---
 
-## `/run:status`
+## `/run status`
 
 Show current state:
 

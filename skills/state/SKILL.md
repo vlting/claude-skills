@@ -14,9 +14,9 @@ User-facing management for the session-state DB. Shows what's in flight across a
 
 ```
 /state                   — dashboard: all active sessions
-/state:info {query}      — full detail for one session
-/state:abandon {query}   — mark a session as abandoned
-/state:gc                — purge completed/abandoned > 30 days
+/state info {query}      — full detail for one session
+/state abandon {query}   — mark a session as abandoned
+/state gc                — purge completed/abandoned > 30 days
 ```
 
 ---
@@ -44,7 +44,7 @@ Stale (>7d):
 3. Sessions with `age_days >= 7` go in the "Stale" section with a warning.
 4. If no active sessions: "No active sessions."
 
-### `/state:info {query}`
+### `/state info {query}`
 
 1. Call `mcp__state__session_list` with no filters.
 2. Match `{query}` against skill name, repo basename, or scope. If ambiguous, ask user to pick.
@@ -74,7 +74,7 @@ Payload:
 {formatted JSON payload, truncated to 500 chars}
 ```
 
-### `/state:abandon {query}`
+### `/state abandon {query}`
 
 1. Call `mcp__state__session_list` with `status: "active"`.
 2. Match `{query}` against skill name, repo basename, or scope.
@@ -83,7 +83,7 @@ Payload:
 5. Call `mcp__state__session_abandon` with the session_id.
 6. Confirm: "Abandoned: {skill} / {repo} / {scope}"
 
-### `/state:gc`
+### `/state gc`
 
 1. Call `mcp__state__session_list` with no filters (triggers inline GC).
 2. Report: "GC: {purged} sessions purged (completed/abandoned > 30 days)."
@@ -93,7 +93,7 @@ Payload:
 
 ## Rules
 
-1. **Never expose raw session IDs in the dashboard.** Use skill + repo + scope for identification. Show IDs only in `/state:info`.
+1. **Never expose raw session IDs in the dashboard.** Use skill + repo + scope for identification. Show IDs only in `/state info`.
 2. **Confirm before abandon.** Always ask.
 3. **One question at a time.** Use `AskUserQuestion` sequentially.
 4. **Compact output.** Tables and lists, no prose.

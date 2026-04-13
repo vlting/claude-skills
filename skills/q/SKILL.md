@@ -14,7 +14,7 @@ Two modes: **enqueue** (create a task) or **drain** (execute tasks).
 
 ```
 /q                — Drain the queue (worker mode — claim and execute tasks)
-/q:drain          — Explicit drain (same as bare /q)
+/q drain          — Explicit drain (same as bare /q)
 /q {description}  — Enqueue a task (create an instruction file)
 ```
 
