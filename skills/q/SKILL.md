@@ -376,6 +376,11 @@ When a worker claims a task:
 
    Do NOT open the URL automatically. Just display it — the user will open it if they want.
 
+   **Create the preview gate marker** (required for merge — enforced by hook):
+   ```bash
+   touch .worktrees/q-{NNN}/.PREVIEWED
+   ```
+
    Then `AskUserQuestion`:
    - **merge** — proceed to merge and clean up
    - **discard** — skip merge, remove worktree, archive as skipped

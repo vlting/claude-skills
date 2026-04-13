@@ -168,9 +168,14 @@ When reviews complete:
    ```
    Add to the summary: `**Preview:** {URL}`
 
+   **Create the preview gate marker** (required for merge — enforced by hook):
+   ```bash
+   touch {WORKTREE_PATH}/.PREVIEWED
+   ```
+
    Do NOT open the URL automatically. Just display it — the user will open it if they want.
 
-3. **If `--yolo`:** kill the preview server (`kill $PREVIEW_PID 2>/dev/null`), skip to Step 5 (merge).
+3. **If `--yolo`:** create marker (`touch {WORKTREE_PATH}/.PREVIEWED`), kill the preview server (`kill $PREVIEW_PID 2>/dev/null`), skip to Step 5 (merge).
 4. **Otherwise:** `AskUserQuestion`:
    - **merge** — merge into `$ORIGIN_BRANCH` and clean up
    - **open** — open the worktree in VS Code (`code {WORKTREE_PATH}`) for manual review, then ask again
