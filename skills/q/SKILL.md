@@ -13,10 +13,15 @@ metadata:
 Two modes: **enqueue** (create a task) or **drain** (execute tasks).
 
 ```
-/q                — Drain the queue (worker mode — claim and execute tasks)
-/q drain          — Explicit drain (same as bare /q)
-/q {description}  — Enqueue a task (create an instruction file)
+/q                            — Drain the queue (worker mode — claim and execute tasks)
+/q drain                      — Explicit drain (same as bare /q)
+/q {description}              — Enqueue a task (create an instruction file)
+/q --no-auto {description}    — Enqueue without draining
+/q --no-segment {description} — Enqueue as single task (no splitting)
+/q drain --preview            — Drain with preview gate before each merge
 ```
+
+Flags may appear before or after the description. Flags listed above for quick reference; details below.
 
 Flags (enqueue only):
 - `--no-segment` — single task, no file-disjoint splitting
