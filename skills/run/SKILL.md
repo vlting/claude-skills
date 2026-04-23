@@ -148,10 +148,11 @@ The orchestrator selects reviewers **conservatively** per task: include by defau
 | `design-critic` | No UI/visual changes (e.g. pure logic, config, build scripts) |
 | `a11y-reviewer` | No interactive/visible UI changes |
 | `stl-enforcer` | No files importing STL or using `styled()`/`stl` prop |
-| `spec-reviewer` | No component implementation (e.g. config, refactor, style-only) |
+| `bundle-checker` | No new dependencies and no new exports |
 | `ui-tester` | No UI changes, or no `.claude/test-context.md` in repo |
 | `test-writer` | Tests already included by worker, or task is test-only |
-| `bundle-checker` | No new dependencies and no new exports |
+
+Reviewers with the **Output Contract** (`design-critic`, `a11y-reviewer`, `stl-enforcer`, `bundle-checker`) end their response with a fenced ```json block for machine consumption. `ui-tester` and `test-writer` return prose/artifacts.
 
 **When in doubt, include the reviewer.** False positives (reviewer says "pass") are cheap. Missed issues are expensive.
 
@@ -169,18 +170,28 @@ Agent(
 
 ### Verdicts
 
-Collect verdicts from all reviewers per task:
+For contract reviewers, parse the fenced ```json block at the end of each response:
+```json
+{ "severity": "ok|warning|error", "blocking": true, "summary": "...", "findings": [...] }
+```
 
-- **All pass** → proceed to MERGE
-- **Any needs-work** → log issues. Optionally re-spawn worker with critique:
-  ```
-  Agent(
-    prompt: "Fix these review issues in {worktree path}:\n\n{collected issues}\n\nCommit fixes.",
-    mode: "bypassPermissions"
-  )
-  ```
-  Then re-review (max 1 retry to avoid infinite loops).
-- **Still failing after retry** → proceed to MERGE anyway, but flag issues in the results summary for user attention.
+Aggregate per task:
+
+| Aggregate | Action |
+|---|---|
+| All `severity: "ok"` (and any prose reviewers clean) | Proceed to MERGE |
+| Warnings only, no `blocking: true` | Proceed to MERGE, surface warnings in results summary |
+| Any `blocking: true` | Re-spawn worker with collected findings, max 1 retry, re-review |
+| Still blocking after retry | Proceed to MERGE anyway, flag blocking findings prominently in results summary |
+
+```
+Agent(
+  prompt: "Fix these review issues in {worktree path}:\n\n{collected findings}\n\nCommit fixes.",
+  mode: "bypassPermissions"
+)
+```
+
+Malformed or missing JSON block from a contract reviewer → treat as `warning`, surface in summary, never retry on malformed output.
 
 ---
 

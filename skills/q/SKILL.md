@@ -5,7 +5,7 @@ user_invocable: true
 license: MIT
 metadata:
   author: Lucas Castro
-  version: 16.0.0
+  version: 16.1.0
 ---
 
 # Q
@@ -338,18 +338,42 @@ When a worker claims a task:
 
 5. **Review Gate:**
 
-   Run specialist review agents against the worktree. Same conservative selection as `/run` Phase 4 — include reviewers by default, skip only when clearly irrelevant to the changed files.
+   Run specialist review agents against the worktree. Reviewers with the **Output Contract** (see `.claude/agents/<name>.md`) emit a fenced JSON block the gate parses to decide merge/retry/proceed.
 
-   Spawn selected review agents **in parallel** (all read-only):
+   **Selection** — include by default, skip only when clearly irrelevant:
+
+   | Agent | Skip when |
+   |---|---|
+   | `stl-enforcer` | No `packages/stl*` edits, no `styled()`/`stl=` usage |
+   | `a11y-reviewer` | No interactive or visible UI, no ARIA-relevant changes |
+   | `design-critic` | No UI/visual changes (pure logic, config, build scripts) |
+   | `bundle-checker` | No new deps, no new exports, no build-affecting changes |
+
+   When in doubt, include. False positives are cheap.
+
+   **Spawn** selected reviewers **in parallel** (read-only, no conflicts):
    ```
    Agent(
+     subagent_type: "{reviewer}",
      name: "{reviewer}-q-{NNN}",
-     prompt: "Review the changes in .worktrees/q-{NNN}. Focus on files: {changed files list}.",
-     // model + effort inherited from agent definition
+     prompt: "Review changes in .worktrees/q-{NNN}. Focus on files: {changed files list}. End with the Output Contract JSON block.",
    )
    ```
 
-   If any reviewer returns `needs-work`: re-implement fixes in the worktree, re-commit, then re-review (max 1 retry). After retry, proceed regardless — surface unresolved issues in the archive summary.
+   **Parse** each response for the fenced ```json block. Expected shape:
+   ```json
+   { "severity": "ok|warning|error", "blocking": true, "summary": "...", "findings": [{ "file": "...", "line": 0, "rule": "...", "severity": "error|warning", "message": "..." }] }
+   ```
+
+   **Verdict:**
+   | Aggregate | Action |
+   |---|---|
+   | All `severity: "ok"` | Merge silently |
+   | Warnings only (no blocking) | Surface in archive summary, merge |
+   | Any `blocking: true` | Re-spawn worker with collected findings (max 1 retry), re-review |
+   | Still blocking after retry | Merge anyway, flag blocking findings prominently in archive summary |
+
+   Malformed or missing JSON from a reviewer → treat as `warning`, surface in summary. Never re-retry on malformed output.
 
 6. **Preview Gate (only when `--preview`):**
 
